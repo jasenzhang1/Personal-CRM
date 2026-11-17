@@ -290,3 +290,35 @@ export async function setArchived(db: SQLiteDatabase, ids: number[], archived: b
     }
   });
 }
+
+/**
+ * People who only exist because of a chat (no Instagram/phone/LinkedIn… account), so they have no
+ * profile link. `removable` are the ones you haven't added anything to; `kept` have your notes,
+ * tags, a ranking, a birthday or other details, so they're left alone.
+ */
+export async function chatOnlyPeople(db: SQLiteDatabase): Promise<{ removable: number[]; kept: number[] }> {
+  const rows = await db.getAllAsync<{ id: number; yours: number }>(
+    `SELECT p.id,
+            (COALESCE(p.notes, '') != '' OR COALESCE(p.how_met, '') != '' OR p.birthday IS NOT NULL OR p.city IS NOT NULL
+             OR p.phone IS NOT NULL OR p.email IS NOT NULL OR p.closeness > 0 OR p.stage IS NOT NULL OR p.circle IS NOT NULL
+             OR p.status = 'reviewed' OR p.name_ok = 1
+             OR EXISTS (SELECT 1 FROM person_tags t WHERE t.person_id = p.id)
+             OR EXISTS (SELECT 1 FROM rankings r WHERE r.person_id = p.id)
+             OR EXISTS (SELECT 1 FROM interactions i WHERE i.person_id = p.id AND i.source = 'manual')) AS yours
+     FROM people p
+     WHERE EXISTS (SELECT 1 FROM sources s WHERE s.person_id = p.id AND s.external_id LIKE 'chat:%')
+       AND NOT EXISTS (SELECT 1 FROM sources s WHERE s.person_id = p.id AND s.external_id NOT LIKE 'chat:%')`,
+  );
+  return { removable: rows.filter((r) => !r.yours).map((r) => r.id), kept: rows.filter((r) => r.yours).map((r) => r.id) };
+}
+
+/** Delete people (and everything attached to them). */
+export async function deletePeople(db: SQLiteDatabase, ids: number[]) {
+  await db.withTransactionAsync(async () => {
+    for (const id of ids) {
+      for (const t of ['sources', 'stage_events', 'person_tags', 'interactions', 'rankings']) await db.runAsync(`DELETE FROM ${t} WHERE person_id = ?`, id);
+      await db.runAsync('DELETE FROM not_duplicates WHERE a = ? OR b = ?', id, id);
+      await db.runAsync('DELETE FROM people WHERE id = ?', id);
+    }
+  });
+}

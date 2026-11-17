@@ -181,14 +181,14 @@ test('Instagram chats: 1:1 only, calls with duration, matched by name or added, 
   await migrate(db);
   const sam = await createPerson(db, { name: 'Sam Lee' });
   const [r] = await importChats(db, chats);
-  assert.deepEqual([r.chats, r.matched, r.created, r.skipped, r.calls], [3, 1, 1, 1, 1]);
+  assert.deepEqual([r.chats, r.matched, r.created, r.skipped, r.calls], [3, 1, 0, 2, 1]); // chats never add people
   assert.equal((await activitySummary(db, sam)).callSecondsAll, 3600);
   const lc = await db.getFirstAsync('SELECT last_contacted FROM people WHERE id = ?', sam);
   assert.match(lc.last_contacted, /^2026-11-1[01]$/);
   // Importing the same export again must not double-count.
   await importChats(db, parseChats(entries));
   assert.equal((await activitySummary(db, sam)).callSecondsAll, 3600);
-  assert.equal((await db.getFirstAsync("SELECT COUNT(*) AS n FROM people WHERE name = 'Chatty Cathy'")).n, 1);
+  assert.equal((await db.getFirstAsync("SELECT COUNT(*) AS n FROM people WHERE name = 'Chatty Cathy'")).n, 0);
 });
 
 test('Discord DMs match friends by user id; server channels ignored', async () => {

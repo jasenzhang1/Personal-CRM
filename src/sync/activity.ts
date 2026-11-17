@@ -17,8 +17,6 @@ export interface ChatImportResult {
   linkedToFollower?: number;
 }
 
-/** Chats with someone not in your CRM become a new person once you've exchanged at least this many messages. */
-export const MIN_MESSAGES_TO_ADD = 20;
 
 const nameKey = (s: string) => s.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -71,19 +69,13 @@ export async function importChats(db: SQLiteDatabase, threads: ThreadActivity[])
         if (personId !== undefined) r.linkedToFollower = (r.linkedToFollower ?? 0) + 1;
       }
 
+      // Chats only add message counts to people already in your list. They never create people:
+      // chats don't include usernames, so such a person would have no profile link.
       if (personId === undefined) {
-        if (!th.otherName || th.messages + th.calls < MIN_MESSAGES_TO_ADD) {
-          r.skipped++;
-          continue;
-        }
-        const ins = await db.runAsync(
-          `INSERT INTO people (name, status, created_at, updated_at) VALUES (?, 'backlog', ?, ?)`,
-          th.otherName, t, t,
-        );
-        personId = ins.lastInsertRowId;
-        byName.set(nameKey(th.otherName), [personId]);
-        r.created++;
-      } else r.matched++;
+        r.skipped++;
+        continue;
+      }
+      r.matched++;
 
       // Remember the link so the next import of a newer export matches instantly.
       if (th.source !== 'discord') {
@@ -127,10 +119,10 @@ export function describeChats(r: ChatImportResult): string {
   const bits = [
     `${r.chats} one-on-one chats`,
     `${r.matched} matched to people${r.linkedToFollower ? ` (${r.linkedToFollower} by their Instagram username)` : ''}`,
-    r.created ? `${r.created} ${r.created === 1 ? 'person' : 'people'} you talk to added (Older connections)` : '',
+
     `${r.messages.toLocaleString()} messages`,
     r.calls ? `${r.calls} call${r.calls === 1 ? '' : 's'} (${hours >= 1 ? `${hours.toFixed(1)} h` : `${Math.round(r.callSeconds / 60)} min`})` : '',
-    r.skipped ? `${r.skipped} small chats skipped` : '',
+    r.skipped ? `${r.skipped} with people not in your list skipped` : '',
   ].filter(Boolean);
   return `${label}: ${bits.join(' · ')}`;
 }

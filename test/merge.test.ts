@@ -75,7 +75,8 @@ test('merging keeps everything and future imports land on the kept person', asyn
   const db = fakeDb();
   await migrate(db);
   const follower = (u: string) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] });
-  // Chat first, follower later: the case the import can't prevent (the follower didn't exist yet).
+  // A contact and their chat first, the Instagram follower later: the case the import can't prevent.
+  await createPerson(db, { name: 'Jackie Zhang' });
   const chat = { source: 'instagram', threadId: 'jz_999', otherName: 'Jackie Zhang', messages: 30, calls: 1, callSeconds: 600, days: [{ day: '2026-11-10', messages: 30, calls: 1, call_seconds: 600 }] } as any;
   await importChats(db, [chat]);
   await ingest(db, 'instagram', parseInstagram([follower('jackiezhang26')]));
@@ -170,9 +171,10 @@ test('an Instagram chat attaches to its follower instead of creating a second pe
     ({ source: 'instagram', threadId, otherName, messages: n, calls: 0, callSeconds: 0, days: [{ day: '2026-11-10', messages: n, calls: 0, call_seconds: 0 }] }) as any;
   const [r] = await importChats(db, [chat('jz_1', 'Jackie Zhang'), chat('zoe_2', 'Zoe Deng', 3), chat('kl_3', 'Kevin Lee')]);
   assert.equal(r.linkedToFollower, 2); // Jackie by username, Zoe by her Instagram name (even a small chat)
-  assert.equal(r.created, 1); // two Kevin Lee accounts: too ambiguous, so a new person
+  assert.equal(r.created, 0); // two Kevin Lee accounts: too ambiguous, so the chat is skipped (chats never add people)
+  assert.equal(r.skipped, 1);
   const names = (await db.getAllAsync('SELECT name FROM people')).map((x: any) => x.name).sort((x: string, y: string) => x.localeCompare(y));
-  assert.deepEqual(names, ['jackiezhang26', 'Kevin Lee', 'kevin.lee.2', 'kevinlee1', 'zd_77'].sort((x, y) => x.localeCompare(y)));
+  assert.deepEqual(names, ['jackiezhang26', 'kevin.lee.2', 'kevinlee1', 'zd_77'].sort((x, y) => x.localeCompare(y)));
   const jz = await db.getFirstAsync("SELECT SUM(i.messages) m FROM interactions i JOIN sources s ON s.person_id = i.person_id WHERE s.external_id = 'jackiezhang26'");
   assert.equal(jz.m, 30);
 });
@@ -191,4 +193,30 @@ test('merge all likely: skips anyone matching more than one person', async () =>
   const amy = await db.getAllAsync("SELECT p.name, p.notes, s.external_id FROM people p JOIN sources s ON s.person_id = p.id WHERE p.name LIKE 'Amy%'");
   assert.deepEqual(amy.map((x: any) => [x.name, x.notes, x.external_id]), [['Amy Tran', 'Roommate', 'amytran99']]);
   assert.equal((await listDuplicates(db)).filter((p) => p.strong).length, 2); // the Kevin pairs are still there to check
+});
+
+test('removing people who only came from chats keeps the ones you added to', async () => {
+  const { chatOnlyPeople, deletePeople } = await import('../src/db/people.ts');
+  const db = fakeDb();
+  await migrate(db);
+  // Older versions created these from busy chats.
+  const t = new Date().toISOString();
+  const mk = async (name: string, thread: string) => {
+    const id = (await db.runAsync("INSERT INTO people (name, status, created_at, updated_at) VALUES (?, 'backlog', ?, ?)", name, t, t)).lastInsertRowId;
+    await db.runAsync("INSERT INTO sources (person_id, source, external_id, first_seen) VALUES (?, 'instagram', ?, ?)", id, 'chat:' + thread, t);
+    return id;
+  };
+  const plain = await mk('Chat Only', 'c_1');
+  const noted = await mk('Chat With Notes', 'c_2');
+  await db.runAsync("UPDATE people SET notes = 'met at a party' WHERE id = ?", noted);
+  const ranked = await mk('Chat Ranked', 'c_3');
+  await setPlacement(db, ranked, 7, 2);
+  const follower = await createPerson(db, { name: 'Real Follower' });
+  await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'instagram', 'real.f', '@real.f', ?)", follower, t);
+  await db.runAsync("INSERT INTO sources (person_id, source, external_id, first_seen) VALUES (?, 'instagram', 'chat:c_4', ?)", follower, t);
+  const r = await chatOnlyPeople(db);
+  assert.deepEqual([r.removable, r.kept.sort()], [[plain], [noted, ranked].sort()]);
+  await deletePeople(db, r.removable);
+  assert.deepEqual((await db.getAllAsync('SELECT name FROM people ORDER BY id')).map((x: any) => x.name), ['Chat With Notes', 'Chat Ranked', 'Real Follower']);
+  assert.equal((await db.getFirstAsync("SELECT COUNT(*) n FROM sources WHERE external_id = 'chat:c_1'")).n, 0);
 });

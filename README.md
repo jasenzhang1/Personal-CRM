@@ -110,7 +110,7 @@ Every person has one **0–10 closeness score**, and every list sorts by it. The
 - **Then it keeps moving.** After you place someone, their score follows changes in how much you talk, at half speed. A 1-hour call pushes it up, and going quiet for months pulls it down. **Growing closer** and **Drifting apart** list the biggest moves.
 - **Big changes.** **Re-rank** places someone again. **Not close anymore** (on their page or during the game) drops them straight to 0.
 
-Chat counts come from the Instagram, Facebook (Messenger) and Discord exports when they include Messages. Only one-on-one chats count. Only daily message counts and call lengths are kept, never message text. A chat is matched to a person by an earlier link, then by Instagram username or Discord user ID, then by exact name. A busy chat (20+ messages) with no match becomes a new person under Older connections. Re-importing a newer export replaces the old counts instead of adding to them.
+Chat counts come from the Instagram, Facebook (Messenger) and Discord exports when they include Messages. Only one-on-one chats count. Only daily message counts and call lengths are kept, never message text. A chat is matched to a person by an earlier link, then by Instagram username or Discord user ID, then by exact name. Then by the follower whose username or Instagram name fits. Chats never add people: a chat with no match is skipped, because chats don't include usernames and the person would have no profile link. If an older version added people from chats, a button on People removes them. Re-importing a newer export replaces the old counts instead of adding to them.
 
 ## Where data lives
 
