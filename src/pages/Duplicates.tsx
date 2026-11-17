@@ -1,0 +1,211 @@
+import { useId, useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
+import { Avatar, Empty, PageHead, Pager, SourceBadge, TagChip } from '@/components/ui';
+import { dismissDuplicate, listDuplicates, mergePeople, richness } from '@/db/merge';
+import { getPerson, listPeople, type Person, type PersonListRow } from '@/db/people';
+import { DUP_REASONS, type DupPair } from '@/lib/duplicates';
+import { looksStandard, suggestName } from '@/lib/names';
+import { formatDate } from '@/lib/dates';
+import { useQuery, useStore } from '@/lib/store';
+
+const PAGE = 20;
+
+export function Duplicates() {
+  const { db, bump } = useStore();
+  const [tab, setTab] = useState<'likely' | 'maybe'>('likely');
+  const [page, setPage] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const data = useQuery(async () => {
+    const pairs = await listDuplicates(db);
+    const people = new Map((await listPeople(db, {})).map((p) => [p.id, p]));
+    return { pairs: pairs.filter((p) => people.has(p.a) && people.has(p.b)), people };
+  });
+  if (!data) return null;
+
+  const likely = data.pairs.filter((p) => p.strong);
+  const maybe = data.pairs.filter((p) => !p.strong);
+  const shown = tab === 'likely' ? likely : maybe;
+  const pg = Math.min(page, Math.max(0, Math.ceil(shown.length / PAGE) - 1));
+
+  return (
+    <div className="page dup-page">
+      <PageHead
+        title="Merge duplicates"
+        sub="The same person can show up twice, e.g. as an Instagram follower (jackiezhang26) and as a chat contact (Jackie Zhang). Merging keeps everything from both: notes, tags, chats, rankings and where they came from."
+      />
+      {notice && <p className="notice" role="status">✓ {notice}</p>}
+
+      {data.pairs.length === 0 ? (
+        <Empty>
+          No duplicates found. 🎉 <Link to="/people">Back to People</Link>
+        </Empty>
+      ) : (
+        <>
+          <div className="chips" role="tablist" aria-label="Show">
+            <button type="button" role="tab" aria-selected={tab === 'likely'} className={`chip${tab === 'likely' ? ' active' : ''}`} onClick={() => { setTab('likely'); setPage(0); }}>
+              Likely the same · {likely.length.toLocaleString()}
+            </button>
+            <button type="button" role="tab" aria-selected={tab === 'maybe'} className={`chip${tab === 'maybe' ? ' active' : ''}`} onClick={() => { setTab('maybe'); setPage(0); }}>
+              Maybe · {maybe.length.toLocaleString()}
+            </button>
+          </div>
+          {shown.length === 0 && <Empty>Nothing here.</Empty>}
+          <div className="stack">
+            {shown.slice(pg * PAGE, (pg + 1) * PAGE).map((pair) => (
+              <PairCard
+                key={`${pair.a}:${pair.b}`}
+                pair={pair}
+                a={data.people.get(pair.a)!}
+                b={data.people.get(pair.b)!}
+                onMerge={async (keepId, dropId, name) => {
+                  await mergePeople(db, keepId, dropId, name);
+                  setNotice(`Merged into ${name}.`);
+                  bump();
+                }}
+                onDismiss={async () => {
+                  await dismissDuplicate(db, pair.a, pair.b);
+                  setNotice(`Got it: ${data.people.get(pair.a)!.name} and ${data.people.get(pair.b)!.name} are different people.`);
+                  bump();
+                }}
+              />
+            ))}
+          </div>
+          <Pager page={pg} pageSize={PAGE} count={shown.length} onChange={setPage} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function PairCard({ pair, a, b, onMerge, onDismiss }: {
+  pair: DupPair;
+  a: PersonListRow;
+  b: PersonListRow;
+  onMerge: (keepId: number, dropId: number, name: string) => Promise<void>;
+  onDismiss: () => void;
+}) {
+  const { db } = useStore();
+  // Keep whichever record has more on it; the name is chosen separately.
+  const keepId = useQuery(async () => {
+    const [pa, pb] = await Promise.all([getPerson(db, a.id), getPerson(db, b.id)]);
+    if (!pa || !pb) return a.id;
+    return (await richness(db, pb)) > (await richness(db, pa)) ? b.id : a.id;
+  }, [a.id, b.id]);
+  const [busy, setBusy] = useState(false);
+  if (keepId === undefined) return null;
+  const keep = keepId === a.id ? a : b;
+  const drop = keepId === a.id ? b : a;
+  return (
+    <section className="card pad dup-card">
+      <p className="small muted">{DUP_REASONS[pair.reason]}</p>
+      <div className="dup-pair">
+        <PersonMini p={a} />
+        <span className="dup-and" aria-hidden>
+          +
+        </span>
+        <PersonMini p={b} />
+      </div>
+      <MergeForm
+        a={keep}
+        b={drop}
+        busy={busy}
+        onMerge={async (name) => {
+          setBusy(true);
+          try {
+            await onMerge(keep.id, drop.id, name);
+          } finally {
+            setBusy(false);
+          }
+        }}
+        extra={
+          <button type="button" className="btn ghost" onClick={onDismiss}>
+            Not the same person
+          </button>
+        }
+      />
+    </section>
+  );
+}
+
+/** The name choices after a merge: both names (proper "First Last" first), plus a cleaned-up guess. */
+export function nameOptions(a: { name: string; handles?: string[] }, b: { name: string; handles?: string[] }) {
+  const opts: string[] = [];
+  const push = (n: string | undefined) => n && !opts.some((o) => o === n.trim()) && opts.push(n.trim());
+  const both = [a, b].sort((x, y) => Number(looksStandard(y.name)) - Number(looksStandard(x.name)));
+  for (const p of both) push(p.name);
+  if (!opts.some(looksStandard)) for (const p of both) push(suggestName({ name: p.name, usernames: p.handles })?.name);
+  return opts;
+}
+
+export function MergeForm({ a, b, busy, onMerge, extra }: {
+  a: Pick<Person, 'name'> & { sources?: string[] };
+  b: Pick<Person, 'name'> & { sources?: string[] };
+  busy?: boolean;
+  onMerge: (name: string) => void;
+  extra?: ReactNode;
+}) {
+  const options = nameOptions(a, b);
+  const [choice, setChoice] = useState(options[0]);
+  const [custom, setCustom] = useState('');
+  const group = useId(); // each form needs its own radio group
+  const name = choice === '__custom' ? custom.trim() : choice;
+  return (
+    // Not a <form>: this also appears inside the person page's edit form, and forms can't nest.
+    <div className="stack merge-form">
+      <fieldset className="merge-names">
+        <legend className="small">Name after merging</legend>
+        {options.map((o) => (
+          <label key={o} className="check">
+            <input type="radio" name={group} checked={choice === o} onChange={() => setChoice(o)} />
+            {o}
+          </label>
+        ))}
+        <label className="check">
+          <input type="radio" name={group} checked={choice === '__custom'} onChange={() => setChoice('__custom')} />
+          <input
+            className="input"
+            placeholder="Something else…"
+            value={custom}
+            aria-label="Another name"
+            onFocus={() => setChoice('__custom')}
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (name) onMerge(name);
+              }
+            }}
+          />
+        </label>
+      </fieldset>
+      <div className="row-gap">
+        <button type="button" className="btn primary" disabled={busy || !name} onClick={() => name && onMerge(name)}>
+          {busy ? 'Merging…' : 'Merge'}
+        </button>
+        {extra}
+      </div>
+    </div>
+  );
+}
+
+function PersonMini({ p }: { p: PersonListRow }) {
+  const details = [p.how_met, p.company, p.email, p.phone].filter(Boolean).slice(0, 2).join(' · ');
+  return (
+    <Link to={`/person/${p.id}`} className="dup-person" title="Open their page">
+      <Avatar name={p.name} photo={p.photo} size={44} />
+      <span className="person-text">
+        <span className="person-name">{p.name}</span>
+        <span className="person-sub">{details || `Added ${formatDate(p.created_at.slice(0, 10))}`}</span>
+        <span className="badges">
+          {p.sources.map((s) => (
+            <SourceBadge key={s} source={s} />
+          ))}
+          {p.tags.slice(0, 3).map((t) => (
+            <TagChip key={t} tag={t} />
+          ))}
+        </span>
+      </span>
+    </Link>
+  );
+}

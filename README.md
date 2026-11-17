@@ -47,6 +47,12 @@ Instagram only exports usernames, so after an import some people are named like 
 - **Guesses** (`zongyundeng` → Zongyun Deng) wait for you: edit, **Save**, **Keep as is**, or **Apply all**.
 - Names you type yourself, on that page or on someone's own page, are never changed again.
 
+## Merging duplicates
+
+The same person can end up in here twice, for example as an Instagram follower (`jackiezhang26`) and as a chat contact (Jackie Zhang). **Merge duplicates** (button on People, or the link after an import) lists likely pairs. It matches by the name someone uses in your chats, a username that spells out their name, exactly the same name, or the same email or phone. Pick the name to keep and press **Merge**, or **Not the same person** to stop seeing that pair. You can also merge anyone by hand from their page with **Merge with someone…**.
+
+Merging keeps everything from both copies: blank details are filled in, notes are combined, and tags, chats and call logs, rankings, pipeline history and import links all move to one person. Later imports of either account land on that person. A merge can't be undone, so download a backup before merging a lot at once.
+
 ## Ranking and closeness scores
 
 Every person has one **0–10 closeness score**, and every list sorts by it. There are no fixed buckets like "inner circle": friendships change, so scores do too.

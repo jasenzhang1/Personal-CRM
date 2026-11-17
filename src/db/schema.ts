@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -120,6 +120,17 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
     await addColumn(db, 'sources', 'display_name', 'TEXT');
     // 1 = you've confirmed this name (renamed it or chose "Keep as is"), so name cleanup leaves it alone.
     await addColumn(db, 'people', 'name_ok', 'INTEGER NOT NULL DEFAULT 0');
+  }
+
+  if (current < 6) {
+    await db.execAsync(`
+      -- Pairs you said are NOT the same person, so duplicate suggestions skip them. a < b.
+      CREATE TABLE IF NOT EXISTS not_duplicates (
+        a INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        b INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        PRIMARY KEY (a, b)
+      );
+    `);
   }
 
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);

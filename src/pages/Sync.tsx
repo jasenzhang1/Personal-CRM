@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { applyNameSuggestions, AUTO_NAMES_KEY, nameReviewList } from '@/db/names';
+import { listDuplicates } from '@/db/merge';
 import { PageHead, SourceBadge } from '@/components/ui';
 import { getSetting, setSetting } from '@/db/people';
 import { SOURCE_LABELS } from '@/lib/constants';
@@ -123,6 +124,8 @@ export function Sync() {
     const out: Log[] = [];
     if (fixed) out.push({ ok: true, text: `Cleaned up ${fixed.toLocaleString()} ${fixed === 1 ? 'name' : 'names'} (e.g. usernames → First Last).` });
     if (left) out.push({ ok: true, text: `${left.toLocaleString()} ${left === 1 ? 'name still needs' : 'names still need'} a look.`, link: { to: '/names', label: 'Clean up names →' } });
+    const dupes = (await listDuplicates(db)).filter((p) => p.strong).length;
+    if (dupes) out.push({ ok: true, text: `${dupes.toLocaleString()} ${dupes === 1 ? 'person looks' : 'people look'} like they're in here twice.`, link: { to: '/duplicates', label: 'Merge duplicates →' } });
     return out;
   };
 

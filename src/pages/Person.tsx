@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Avatar, Chips, Closeness, ScoreBadge, SourceBadge, TagInput } from '@/components/ui';
+import { Avatar, Chips, Closeness, Modal, ScoreBadge, SourceBadge, TagInput } from '@/components/ui';
+import { mergePeople } from '@/db/merge';
+import { MergeForm } from './Duplicates';
 import {
   addStageNote,
   allTags,
@@ -15,6 +17,7 @@ import {
   setStage,
   updatePerson,
   type Person,
+  type PersonListRow,
   type PersonPatch,
   type SourceRow,
   type StageEvent,
@@ -111,6 +114,7 @@ export function PersonPage() {
     return { s: scores.get(id)!, withScore, activity: await activitySummary(db, id) };
   }, [id, person]);
   const [logMinutes, setLogMinutes] = useState('60');
+  const [merging, setMerging] = useState(false);
   const [logDay, setLogDay] = useState(isoDate());
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const inQueue = !!queue && (person?.status === 'new' || person?.status === 'backlog');
@@ -260,7 +264,7 @@ export function PersonPage() {
         <div className="grow">
           <input className="name-input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Name" aria-label="Name" autoFocus={isNew} />
           <div className="badges">
-            {sources.map((s) => <SourceBadge key={s.id} source={s.source} />)}
+            {[...new Set(sources.map((s) => s.source))].map((s) => <SourceBadge key={s} source={s} />)}
             {sources.filter((s) => s.handle).map((s) =>
               s.source === 'instagram' ? (
                 <a key={`h${s.id}`} href={`https://www.instagram.com/${s.handle!.replace(/^@/, '')}/`} target="_blank" rel="noreferrer" className="small">{s.handle}</a>
@@ -431,10 +435,34 @@ export function PersonPage() {
             )
           )}
 
-          {id !== null && (
-            <button type="button" className="btn danger" onClick={remove}>
-              Delete person
-            </button>
+          {id !== null && person && (
+            <div className="row-gap">
+              <button type="button" className="btn secondary" onClick={() => setMerging(true)}>
+                🔗 Merge with someone…
+              </button>
+              <button type="button" className="btn danger" onClick={remove}>
+                Delete person
+              </button>
+            </div>
+          )}
+          {id !== null && person && (
+            <MergeDialog
+              open={merging}
+              person={person}
+              onClose={() => setMerging(false)}
+              onMerge={async (otherId, name) => {
+                await mergePeople(db, id, otherId, name);
+                setMerging(false);
+                // Reload this page's form with the merged details.
+                const fresh = await getPerson(db, id);
+                if (fresh) {
+                  setPerson(fresh);
+                  setForm({ ...toForm(fresh), tags: await getTags(db, id) });
+                  setSources(await getSources(db, id));
+                }
+                bump();
+              }}
+            />
           )}
         </div>
       </div>
@@ -505,4 +533,70 @@ function ActivityLine({ a }: { a: import('@/db/ranking').ActivitySummary }) {
 function ScoreRankText({ s, of }: { s: ScoreInfo; of: number }) {
   if (s.score <= 0) return <span className="small">{s.placed ? 'Not close right now' : 'No score yet'}</span>;
   return <span className="small">#{s.rank} of {of}{s.placed ? '' : ' · guessed'}</span>;
+}
+
+/** Pick someone to fold into this person. Everything of theirs moves here, then they're removed. */
+function MergeDialog({ open, person, onClose, onMerge }: { open: boolean; person: Person; onClose: () => void; onMerge: (otherId: number, name: string) => Promise<void> }) {
+  const { db } = useStore();
+  const [search, setSearch] = useState('');
+  const [other, setOther] = useState<PersonListRow | null>(null);
+  const [busy, setBusy] = useState(false);
+  const found = useQuery(async () => (search.trim() ? (await listPeople(db, { search: search.trim() })).filter((p) => p.id !== person.id).slice(0, 12) : []), [search, person.id]);
+  const close = () => {
+    setOther(null);
+    setSearch('');
+    onClose();
+  };
+  return (
+    <Modal open={open} title={`Merge with ${person.name}`} onClose={close}>
+      {!other ? (
+        <div className="stack">
+          <p className="small muted">Find the other copy of {person.name}. Everything on it (notes, tags, chats, rankings, imports) moves here.</p>
+          <input className="input" type="search" autoFocus placeholder="Search by name or username…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search for the other copy" />
+          <ul className="list">
+            {(found ?? []).map((p) => (
+              <li key={p.id} className="person-row">
+                <button type="button" className="person-link pick-btn" onClick={() => setOther(p)}>
+                  <Avatar name={p.name} photo={p.photo} size={32} />
+                  <span className="person-text">
+                    <span className="person-name">{p.name}</span>
+                    <span className="person-sub">{[p.how_met, p.company, p.email].filter(Boolean)[0] ?? ''}</span>
+                  </span>
+                </button>
+                <span className="badges">{p.sources.map((s) => <SourceBadge key={s} source={s} />)}</span>
+              </li>
+            ))}
+          </ul>
+          {search.trim() && found && !found.length && <p className="small muted">No one by that name.</p>}
+        </div>
+      ) : (
+        <div className="stack">
+          <p className="small">
+            Merge <strong>{other.name}</strong> into <strong>{person.name}</strong>. Nothing is lost: blank details are filled in, notes are combined, and tags, chats and
+            rankings move over.
+          </p>
+          <MergeForm
+            a={person}
+            b={other}
+            busy={busy}
+            onMerge={async (name) => {
+              setBusy(true);
+              try {
+                await onMerge(other.id, name);
+                setOther(null);
+                setSearch('');
+              } finally {
+                setBusy(false);
+              }
+            }}
+            extra={
+              <button type="button" className="btn ghost" onClick={() => setOther(null)}>
+                Pick someone else
+              </button>
+            }
+          />
+        </div>
+      )}
+    </Modal>
+  );
 }

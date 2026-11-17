@@ -6,6 +6,7 @@ import { PersonPage } from './pages/Person';
 import { Pipeline } from './pages/Pipeline';
 import { Rank } from './pages/Rank';
 import { Names } from './pages/Names';
+import { Duplicates } from './pages/Duplicates';
 import { Reminders } from './pages/Reminders';
 import { Sync } from './pages/Sync';
 
@@ -67,6 +68,7 @@ const router = createHashRouter([
       { path: '/people', element: <People /> },
       { path: '/rank', element: <Rank /> },
       { path: '/names', element: <Names /> },
+      { path: '/duplicates', element: <Duplicates /> },
       { path: '/reminders', element: <Reminders /> },
       { path: '/pipeline', element: <Pipeline /> },
       { path: '/sync', element: <Sync /> },

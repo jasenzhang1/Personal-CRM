@@ -7,6 +7,7 @@ import { describeScoreInfo } from '@/lib/ranking';
 import { inferCircle } from '@/lib/relationship';
 import { loadScores } from '@/db/ranking';
 import { nameReviewList } from '@/db/names';
+import { listDuplicates } from '@/db/merge';
 import { useQuery, useStore } from '@/lib/store';
 
 type Filter = 'all' | 'reviewed' | 'todo' | 'archived';
@@ -39,6 +40,7 @@ export function People() {
   }, [filter, search, tag]);
   const tags = useQuery(() => allTags(db), []);
   const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
+  const dupes = useQuery(async () => (await listDuplicates(db)).filter((p) => p.strong).length, []) ?? 0;
 
   const rows = useMemo(() => {
     if (!people) return null;
@@ -71,6 +73,11 @@ export function People() {
   return (
     <div className="page page-wide">
       <PageHead title="People" sub={rows ? `${rows.length.toLocaleString()} ${rows.length === 1 ? 'person' : 'people'}` : undefined}>
+        {dupes > 0 && (
+          <Link className="btn secondary" to="/duplicates" title="The same person imported twice">
+            🔗 {dupes.toLocaleString()} possible {dupes === 1 ? 'duplicate' : 'duplicates'}
+          </Link>
+        )}
         {needNames > 0 && (
           <Link className="btn secondary" to="/names" title="Turn usernames into First Last">
             ✨ Clean up {needNames.toLocaleString()} {needNames === 1 ? 'name' : 'names'}
