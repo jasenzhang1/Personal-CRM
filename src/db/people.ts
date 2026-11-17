@@ -242,3 +242,23 @@ export async function addInstagramAccount(
     );
   return { ok: true, username };
 }
+
+/**
+ * Archive people (not actual people, or no longer relevant) or bring them back. Archived people
+ * are hidden from People, Rank, name cleanup and duplicates, but kept, so imports don't re-add them.
+ */
+export async function setArchived(db: SQLiteDatabase, ids: number[], archived: boolean) {
+  const t = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    for (const id of ids) {
+      if (archived) await db.runAsync("UPDATE people SET status = 'archived', updated_at = ? WHERE id = ? AND status != 'archived'", t, id);
+      // Back to "Filled in" if you'd written anything about them, else "To fill in".
+      else
+        await db.runAsync(
+          `UPDATE people SET status = CASE WHEN COALESCE(how_met, '') != '' OR COALESCE(notes, '') != '' THEN 'reviewed' ELSE 'backlog' END,
+           updated_at = ? WHERE id = ? AND status = 'archived'`,
+          t, id,
+        );
+    }
+  });
+}

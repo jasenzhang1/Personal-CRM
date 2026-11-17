@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { Avatar, Empty, PageHead, Pager } from '@/components/ui';
 import { applyNameSuggestions, AUTO_NAMES_KEY, keepName, nameReviewList, renamePerson, type NameRow } from '@/db/names';
-import { getSetting, setSetting } from '@/db/people';
+import { getSetting, setArchived, setSetting } from '@/db/people';
+import { looksLikeOrganization } from '@/lib/orgs';
 import { REASON_LABELS } from '@/lib/names';
 import { useQuery, useStore } from '@/lib/store';
 
@@ -152,6 +153,17 @@ export function Names() {
                       </button>
                       <button type="button" className="btn ghost small" onClick={() => keep(r)}>
                         Keep as is
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ghost small${looksLikeOrganization(r.name, r.handles) ? ' org-hint' : ''}`}
+                        title="Archive: a club, business or other account, not a person"
+                        onClick={async () => {
+                          await setArchived(db, [r.id], true);
+                          done(`Archived “${r.name}”.`);
+                        }}
+                      >
+                        Not a person
                       </button>
                     </div>
                   </form>

@@ -53,6 +53,24 @@ The same person can end up in here twice, for example as an Instagram follower (
 
 Merging keeps everything from both copies: blank details are filled in, notes are combined, and tags, chats and call logs, rankings, pipeline history and import links all move to one person. Later imports of either account land on that person. A merge can't be undone, so download a backup before merging a lot at once.
 
+## Instagram followers
+
+**📸 Followers** (on People, or the link after an Instagram import) shows:
+
+- **Don't follow you back**: accounts you follow that don't follow you. Many are celebrities, brands or clubs, so there's an **Archive everyone on this page** button.
+- **You don't follow back**, **New followers**, and **You unfollowed** (Instagram's own list plus changes between exports).
+- **Unfollowed you**, with the window it happened in. Instagram never says who unfollowed you, so every import saves a snapshot of your followers and compares it with the previous one. The first export is the starting point. Download a fresh export every few weeks and drop it in. Exports dropped out of order are handled: an older one never undoes a newer one.
+
+## Archiving
+
+Archive people who aren't really people (clubs, shops, brands) or who don't matter to you anymore. They're hidden from People, Rank, name cleanup and duplicates, but kept, so a future import doesn't add them back. Ways to archive:
+- **🗄 Archive** on someone's page
+- **☑ Select** on People, then **Archive** in bulk. The **Looks like an organization** filter finds likely clubs and businesses.
+- **Not a person** on Clean up names
+- the Followers page
+
+Find them again under the **Archived** filter, where you can **Unarchive**.
+
 ## Ranking and closeness scores
 
 Every person has one **0–10 closeness score**, and every list sorts by it. There are no fixed buckets like "inner circle": friendships change, so scores do too.

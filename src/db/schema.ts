@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -130,6 +130,31 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
         b INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
         PRIMARY KEY (a, b)
       );
+    `);
+  }
+
+  if (current < 7) {
+    await db.execAsync(`
+      -- Instagram follow status as of your latest export (one row per account, people or not).
+      CREATE TABLE IF NOT EXISTS ig_accounts (
+        username TEXT PRIMARY KEY,        -- lowercase
+        display TEXT,
+        follows_me INTEGER NOT NULL DEFAULT 0,
+        i_follow INTEGER NOT NULL DEFAULT 0,
+        follows_me_since TEXT,            -- YYYY-MM-DD, from Instagram
+        i_follow_since TEXT,
+        updated_at TEXT
+      );
+      -- Changes found by comparing exports: followed_me | unfollowed_me | i_followed | i_unfollowed.
+      CREATE TABLE IF NOT EXISTS ig_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        at TEXT,                          -- when (for unfollows: the export where they were first missing)
+        after TEXT,                       -- the previous export; it happened between after and at
+        UNIQUE (username, kind, at)
+      );
+      CREATE INDEX IF NOT EXISTS ig_events_kind ON ig_events(kind, at);
     `);
   }
 

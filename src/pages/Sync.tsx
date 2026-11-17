@@ -16,6 +16,7 @@ import { fromContactPicker, parseMany } from '@/sync/parsers';
 import { isMessageEntry, parseChats } from '@/sync/messages';
 import { describeChats, importChats } from '@/sync/activity';
 import { applyInstagramNames, isInstagramNameEntry, parseInstagramNames } from '@/sync/igNames';
+import { describeFollowSync, exportDateOf, followListKind, isUnfollowedByMeEntry, parseFollowList, recordUnfollowedByMe, syncFollowList } from '@/sync/igFollows';
 
 type FileSource = { key: string; title: string; link: string; linkLabel: string; drop: string; wait: string; steps: string[] };
 
@@ -118,6 +119,29 @@ export function Sync() {
 
   const addLog = (entries: Log[]) => setLog((l) => [...entries, ...l]);
 
+  /**
+   * Instagram followers/following: save a snapshot per export and compare with the last one, so
+   * we can tell who unfollowed you. Several exports dropped at once are applied oldest first.
+   */
+  const trackFollows = async (entries: { name: string; text: string }[]): Promise<Log[]> => {
+    const out: Log[] = [];
+    const byExport = new Map<string, { name: string; text: string }[]>();
+    for (const e of entries) if (followListKind(e.name)) byExport.set(e.name.split(' › ')[0], [...(byExport.get(e.name.split(' › ')[0]) ?? []), e]);
+    const exports = [...byExport.values()].sort((a, b) => (exportDateOf(a[0].name) ?? '').localeCompare(exportDateOf(b[0].name) ?? ''));
+    for (const files of exports) {
+      const date = exportDateOf(files[0].name) ?? isoDate();
+      for (const kind of ['followers', 'following'] as const) {
+        const lists = files.filter((e) => followListKind(e.name) === kind);
+        if (!lists.length) continue;
+        const r = await syncFollowList(db, kind, lists.flatMap((e) => parseFollowList(e.text)), date);
+        out.push({ ok: true, text: describeFollowSync(r), link: { to: '/followers', label: 'See followers →' } });
+      }
+    }
+    const mine = entries.filter((e) => isUnfollowedByMeEntry(e.name)).flatMap((e) => parseFollowList(e.text));
+    if (mine.length) await recordUnfollowedByMe(db, mine);
+    return out;
+  };
+
   /** After an import: apply sure-thing name fixes (unless turned off) and point to the rest. */
   const cleanNames = async (): Promise<Log[]> => {
     const auto = (await getSetting(db, AUTO_NAMES_KEY)) !== '0';
@@ -147,6 +171,7 @@ export function Sync() {
         const named = await applyInstagramNames(db, nameEntries.flatMap((e) => parseInstagramNames(e.text)));
         if (named) out.push({ ok: true, text: `Found real names for ${named.toLocaleString()} Instagram ${named === 1 ? 'account' : 'accounts'} (from Close Friends and follow requests).` });
       }
+      out.push(...(await trackFollows(entries)));
       if (!out.length) out.push({ ok: false, text: 'Nothing to import in those files.' });
       else if (out.some((l) => l.ok)) out.push(...(await cleanNames()));
       addLog(out);

@@ -487,3 +487,16 @@ a.source-badge.link:hover { background: color-mix(in srgb, currentColor 10%, tra
 .ig-add-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
 .ig-add-form .input { flex: 1 1 220px; min-width: 0; }
 .err-text { color: var(--danger, #d83a52); flex-basis: 100%; }
+
+/* ---------- select & archive ---------- */
+.bulk-bar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; }
+.bulk-bar .grow { flex: 1; }
+.pt-person.selectable { cursor: pointer; }
+.pt-person.selectable input { width: 18px; height: 18px; flex: none; accent-color: var(--primary); }
+.org-hint { color: #d98a00; }
+
+/* ---------- followers ---------- */
+.follow-list .person-right { flex-wrap: wrap; justify-content: flex-end; }
+.follow-list .person-right .btn { white-space: nowrap; }
+@media (max-width: 520px) { .follow-list .person-row { flex-wrap: wrap; } .follow-list .person-right { width: 100%; justify-content: flex-start; padding-left: 46px; } }
+.follow-list .person-sub { white-space: normal; overflow: visible; text-overflow: clip; }

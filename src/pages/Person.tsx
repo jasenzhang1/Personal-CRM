@@ -14,6 +14,7 @@ import {
   getSources,
   getStageEvents,
   addInstagramAccount,
+  setArchived,
   listPeople,
   setStage,
   updatePerson,
@@ -456,6 +457,19 @@ export function PersonPage() {
             <div className="row-gap">
               <button type="button" className="btn secondary" onClick={() => setMerging(true)}>
                 🔗 Merge with someone…
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                title={person.status === 'archived' ? 'Show them in People again' : 'Hide from People, Rank and suggestions (e.g. not a real person). You can undo this.'}
+                onClick={async () => {
+                  await setArchived(db, [id], person.status !== 'archived');
+                  const fresh = await getPerson(db, id);
+                  if (fresh) setPerson(fresh);
+                  bump();
+                }}
+              >
+                {person.status === 'archived' ? '↩ Unarchive' : '🗄 Archive'}
               </button>
               <button type="button" className="btn danger" onClick={remove}>
                 Delete person

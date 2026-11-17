@@ -8,6 +8,8 @@ import { inferCircle } from '@/lib/relationship';
 import { loadScores } from '@/db/ranking';
 import { nameReviewList } from '@/db/names';
 import { listDuplicates } from '@/db/merge';
+import { setArchived } from '@/db/people';
+import { looksLikeOrganization } from '@/lib/orgs';
 import { useQuery, useStore } from '@/lib/store';
 
 type Filter = 'all' | 'reviewed' | 'todo' | 'archived';
@@ -18,7 +20,7 @@ const FILTER_STATUS: Record<Filter, PersonStatus[]> = {
   archived: ['archived'],
 };
 type Sort = 'score' | 'name' | 'recent';
-type CircleFilter = 'any' | Circle | 'unset';
+type CircleFilter = 'any' | Circle | 'unset' | 'org';
 
 const PAGE = 50;
 
@@ -32,6 +34,8 @@ export function People() {
   const [circle, setCircle] = useState<CircleFilter>('any');
   const [sort, setSort] = useState<Sort>('score');
   const [page, setPage] = useState(0);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ el: HTMLElement; row: Row } | null>(null);
 
   const people = useQuery(async () => {
@@ -49,11 +53,24 @@ export function People() {
       const s = people.scores.get(p.id)!;
       return { ...p, circleShown: p.circle ?? guess, guessed: !p.circle && !!guess, score: s.score, guess: !s.placed, why: describeScoreInfo(s) };
     });
-    const filtered = circle === 'any' ? out : out.filter((r) => (circle === 'unset' ? !r.circleShown : r.circleShown === circle || r.circleShown === 'both'));
+    const filtered =
+      circle === 'any'
+        ? out
+        : circle === 'org'
+          ? out.filter((r) => looksLikeOrganization(r.name, r.ig_handle ? [r.ig_handle] : []))
+          : out.filter((r) => (circle === 'unset' ? !r.circleShown : r.circleShown === circle || r.circleShown === 'both'));
     if (sort === 'score') filtered.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
     if (sort === 'recent') filtered.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return filtered;
   }, [people, circle, sort]);
+
+  const bulkArchive = async (archive: boolean) => {
+    const n = selected.size;
+    if (archive && n > 20 && !confirm(`Archive ${n.toLocaleString()} people? They'll move to the Archived filter, and you can bring them back any time.`)) return;
+    await setArchived(db, [...selected], archive);
+    setSelected(new Set());
+    bump();
+  };
 
   // If filters shrink the list, stay on the last page that still exists.
   const pg = Math.min(page, Math.max(0, Math.ceil((rows?.length ?? 0) / PAGE) - 1));
@@ -86,6 +103,12 @@ export function People() {
         <Link className="btn secondary" to="/rank">
           🏆 Rank friends
         </Link>
+        <Link className="btn secondary" to="/followers">
+          📸 Followers
+        </Link>
+        <button type="button" className={`btn ${selecting ? 'primary' : 'secondary'}`} onClick={() => { setSelecting((v) => !v); setSelected(new Set()); }}>
+          {selecting ? 'Done selecting' : '☑ Select'}
+        </button>
         <Link className="btn primary" to="/person/new">
           + Add person
         </Link>
@@ -106,7 +129,7 @@ export function People() {
               { key: 'all', label: 'All' },
               { key: 'reviewed', label: 'Filled in' },
               { key: 'todo', label: 'To fill in' },
-              { key: 'archived', label: 'Skipped' },
+              { key: 'archived', label: 'Archived' },
             ]}
             value={filter}
             onChange={resetPaging(setFilter)}
@@ -117,6 +140,7 @@ export function People() {
               <option value="personal">Personal</option>
               <option value="professional">Professional</option>
               <option value="unset">Type not set</option>
+              <option value="org">Looks like an organization</option>
             </select>
             <select className="input" value={tag} onChange={(e) => resetPaging(setTag)(e.target.value)} aria-label="Tag">
               <option value="">All tags</option>
@@ -135,6 +159,32 @@ export function People() {
         </div>
       </div>
 
+      {selecting && rows && (
+        <div className="bulk-bar card" role="toolbar" aria-label="Selected people">
+          <strong>{selected.size.toLocaleString()} selected</strong>
+          <button type="button" className="btn ghost small" onClick={() => setSelected(new Set([...selected, ...rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r) => r.id)]))}>
+            Select this page
+          </button>
+          <button type="button" className="btn ghost small" onClick={() => setSelected(new Set(rows.map((r) => r.id)))}>
+            Select all {rows.length.toLocaleString()}
+          </button>
+          {selected.size > 0 && (
+            <button type="button" className="btn ghost small" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          )}
+          <span className="grow" />
+          {filter === 'archived' ? (
+            <button type="button" className="btn primary small" disabled={!selected.size} onClick={() => bulkArchive(false)}>
+              Unarchive {selected.size || ''}
+            </button>
+          ) : (
+            <button type="button" className="btn primary small" disabled={!selected.size} onClick={() => bulkArchive(true)}>
+              Archive {selected.size || ''}
+            </button>
+          )}
+        </div>
+      )}
       {rows && rows.length > 0 && (
         <div className="card people-table" role="table" aria-label="People">
           <div className="pt-row pt-head" role="row">
@@ -151,13 +201,34 @@ export function People() {
             const c = circleInfo(r.circleShown);
             return (
               <div key={r.id} className={`pt-row${r.status === 'archived' ? ' dim' : ''}`} role="row">
-                <Link to={`/person/${r.id}`} className="pt-person" role="cell">
-                  <Avatar name={r.name} photo={r.photo} size={36} />
-                  <span className="person-text">
-                    <span className="person-name">{r.name}</span>
-                    <span className="person-sub">{[r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
-                  </span>
-                </Link>
+                {selecting ? (
+                  <label className="pt-person selectable" role="cell">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.id)}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) next.add(r.id);
+                        else next.delete(r.id);
+                        setSelected(next);
+                      }}
+                      aria-label={`Select ${r.name}`}
+                    />
+                    <Avatar name={r.name} photo={r.photo} size={36} />
+                    <span className="person-text">
+                      <span className="person-name">{r.name}</span>
+                      <span className="person-sub">{[r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
+                    </span>
+                  </label>
+                ) : (
+                  <Link to={`/person/${r.id}`} className="pt-person" role="cell">
+                    <Avatar name={r.name} photo={r.photo} size={36} />
+                    <span className="person-text">
+                      <span className="person-name">{r.name}</span>
+                      <span className="person-sub">{[r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
+                    </span>
+                  </Link>
+                )}
                 <span className="pt-type" role="cell">
                   <button
                     type="button"

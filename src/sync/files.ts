@@ -2,6 +2,7 @@ import { unzipSync } from 'fflate';
 import { isMessageEntry } from './messages';
 import { isRelevantExportEntry } from './parsers';
 import { isInstagramNameEntry } from './igNames';
+import { isUnfollowedByMeEntry } from './igFollows';
 
 /**
  * Turn whatever the user dropped (loose files and/or whole export .zips) into text files
@@ -15,7 +16,7 @@ export async function expandFiles(files: File[]): Promise<{ entries: { name: str
     if (/\.zip$/i.test(f.name) || f.type === 'application/zip' || f.type === 'application/x-zip-compressed') {
       let unzipped: Record<string, Uint8Array>;
       try {
-        unzipped = unzipSync(new Uint8Array(await f.arrayBuffer()), { filter: (e) => isRelevantExportEntry(e.name) || isMessageEntry(e.name) || isInstagramNameEntry(e.name) });
+        unzipped = unzipSync(new Uint8Array(await f.arrayBuffer()), { filter: (e) => isRelevantExportEntry(e.name) || isMessageEntry(e.name) || isInstagramNameEntry(e.name) || isUnfollowedByMeEntry(e.name) });
       } catch {
         notes.push(`${f.name}: couldn't open this zip.`);
         continue;
