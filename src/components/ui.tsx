@@ -307,3 +307,54 @@ export function Modal({ open, title, onClose, children, dismissible = true }: { 
     </dialog>
   );
 }
+
+/** Which page numbers to show: always the first and last, plus a few around the current page. */
+export function pageNumbers(current: number, total: number): (number | 'gap')[] {
+  // A run of up to 7 numbers around the current page (slid inward at the ends), like Google.
+  const run = Math.min(7, total);
+  const start = Math.max(0, Math.min(current - 3, total - run));
+  const keep = new Set([0, total - 1]);
+  for (let i = start; i < start + run; i++) keep.add(i);
+  const out: (number | 'gap')[] = [];
+  let prev = -1;
+  for (const n of [...keep].sort((a, b) => a - b)) {
+    if (n - prev > 1) out.push('gap');
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
+
+/** Google-style page links: ‹ Previous 1 … 4 5 [6] 7 8 … 36 Next ›. `page` is 0-based. */
+export function Pager({ page, pageSize, count, onChange }: { page: number; pageSize: number; count: number; onChange: (page: number) => void }) {
+  const total = Math.ceil(count / pageSize);
+  if (total <= 1) return null;
+  const go = (p: number) => {
+    onChange(p);
+    window.scrollTo({ top: 0 });
+  };
+  return (
+    <nav className="pager" aria-label="Pages">
+      <span className="pager-info small muted">
+        {(page * pageSize + 1).toLocaleString()}–{Math.min(count, (page + 1) * pageSize).toLocaleString()} of {count.toLocaleString()}
+      </span>
+      <div className="pager-links">
+        <button type="button" className="pager-btn" disabled={page === 0} onClick={() => go(page - 1)} aria-label="Previous page">
+          ‹<span className="pager-word"> Previous</span>
+        </button>
+        {pageNumbers(page, total).map((n, i) =>
+          n === 'gap' ? (
+            <span key={`gap${i}`} className="pager-gap">…</span>
+          ) : (
+            <button key={n} type="button" className={`pager-btn num${n === page ? ' current' : ''}`} aria-current={n === page ? 'page' : undefined} onClick={() => go(n)}>
+              {n + 1}
+            </button>
+          ),
+        )}
+        <button type="button" className="pager-btn" disabled={page >= total - 1} onClick={() => go(page + 1)} aria-label="Next page">
+          <span className="pager-word">Next </span>›
+        </button>
+      </div>
+    </nav>
+  );
+}

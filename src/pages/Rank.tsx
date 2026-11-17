@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Avatar, Empty, PageHead, ScoreBadge } from '@/components/ui';
+import { Avatar, Empty, PageHead, Pager, ScoreBadge } from '@/components/ui';
 import { listPeople, type PersonListRow } from '@/db/people';
 import { loadScores, setPlacement } from '@/db/ranking';
 import {
@@ -40,7 +40,7 @@ export function Rank() {
   const [params, setParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>({ kind: 'overview' });
   const [search, setSearch] = useState('');
-  const [shown, setShown] = useState(LIST_PAGE);
+  const [listPage, setListPage] = useState(0);
 
   const data = useQuery(async (): Promise<Pool> => {
     const people = await listPeople(db, { status: ['new', 'backlog', 'reviewed'] });
@@ -113,6 +113,7 @@ export function Rank() {
   }, [data]);
 
   if (!data) return null;
+  const pg = Math.min(listPage, Math.max(0, Math.ceil(everyone.length / LIST_PAGE) - 1));
 
   /* ---------- the game ---------- */
   if (mode.kind === 'play') {
@@ -232,7 +233,7 @@ export function Rank() {
         <section>
           <h2 className="section-title">Everyone, closest first · {everyone.length}</h2>
           <ol className="list card rank-list">
-            {everyone.slice(0, shown).map(({ p, s }) => (
+            {everyone.slice(pg * LIST_PAGE, (pg + 1) * LIST_PAGE).map(({ p, s }) => (
               <li key={p.id} className="person-row">
                 <span className="rank-num">{s.rank}</span>
                 <button type="button" className="person-link pick-btn" onClick={() => navigate(`/person/${p.id}`)}>
@@ -251,11 +252,7 @@ export function Rank() {
               </li>
             ))}
           </ol>
-          {everyone.length > shown && (
-            <button type="button" className="btn secondary" onClick={() => setShown((n) => n + LIST_PAGE * 2)}>
-              Show more
-            </button>
-          )}
+          <Pager page={pg} pageSize={LIST_PAGE} count={everyone.length} onChange={setListPage} />
         </section>
       )}
     </div>

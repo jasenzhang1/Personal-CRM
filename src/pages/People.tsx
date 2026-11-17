@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, PageHead, ScoreBadge, SourceBadge, TagChip } from '@/components/ui';
+import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SourceBadge, TagChip } from '@/components/ui';
 import { allTags, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
@@ -18,7 +18,7 @@ const FILTER_STATUS: Record<Filter, PersonStatus[]> = {
 type Sort = 'score' | 'name' | 'recent';
 type CircleFilter = 'any' | Circle | 'unset';
 
-const PAGE = 150;
+const PAGE = 50;
 
 type Row = PersonListRow & { circleShown: Circle | null; guessed: boolean; score: number; guess: boolean; why: string };
 
@@ -29,7 +29,7 @@ export function People() {
   const [tag, setTag] = useState('');
   const [circle, setCircle] = useState<CircleFilter>('any');
   const [sort, setSort] = useState<Sort>('score');
-  const [shown, setShown] = useState(PAGE);
+  const [page, setPage] = useState(0);
   const [menu, setMenu] = useState<{ el: HTMLElement; row: Row } | null>(null);
 
   const people = useQuery(async () => {
@@ -51,8 +51,11 @@ export function People() {
     return filtered;
   }, [people, circle, sort]);
 
+  // If filters shrink the list, stay on the last page that still exists.
+  const pg = Math.min(page, Math.max(0, Math.ceil((rows?.length ?? 0) / PAGE) - 1));
+
   const resetPaging = <T,>(fn: (v: T) => void) => (v: T) => {
-    setShown(PAGE);
+    setPage(0);
     fn(v);
   };
 
@@ -129,7 +132,8 @@ export function People() {
             </span>
             <span role="columnheader">Connected on</span>
           </div>
-          {rows.slice(0, shown).map((r, i) => {
+          {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r, j) => {
+            const i = pg * PAGE + j;
             const c = circleInfo(r.circleShown);
             return (
               <div key={r.id} className={`pt-row${r.status === 'archived' ? ' dim' : ''}`} role="row">
@@ -167,13 +171,9 @@ export function People() {
               </div>
             );
           })}
-          {rows.length > shown && (
-            <button type="button" className="btn ghost block" onClick={() => setShown((n) => n + PAGE * 2)}>
-              Show more ({(rows.length - shown).toLocaleString()} left)
-            </button>
-          )}
         </div>
       )}
+      {rows && <Pager page={pg} pageSize={PAGE} count={rows.length} onChange={setPage} />}
       {rows && rows.length === 0 && <Empty>{search || tag || circle !== 'any' ? 'No matches.' : 'No one here yet.'}</Empty>}
 
       <LabelMenu
