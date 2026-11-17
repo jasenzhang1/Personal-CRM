@@ -2,9 +2,10 @@ import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Avatar, Empty, PageHead, Pager, SourceIcon, TagChip } from '@/components/ui';
 import { dismissDuplicate, listDuplicates, mergeAllLikely, mergePeople, richness } from '@/db/merge';
-import { getPerson, listPeople, type Person, type PersonListRow } from '@/db/people';
+import { getPerson, listPeople, updatePerson, type Person, type PersonListRow } from '@/db/people';
 import { DUP_REASONS, nameOptions, type DupPair } from '@/lib/duplicates';
-import { formatDate } from '@/lib/dates';
+import { formatBirthday, formatDate } from '@/lib/dates';
+import { shrinkImage } from '@/lib/image';
 import { useQuery, useStore } from '@/lib/store';
 
 const PAGE = 20;
@@ -124,7 +125,9 @@ function PairCard({ pair, a, b, onMerge, onDismiss }: {
   const drop = keepId === a.id ? b : a;
   return (
     <section className="card pad dup-card">
-      <p className="small muted">{DUP_REASONS[pair.reason]}</p>
+      <p className="small muted">
+        {DUP_REASONS[pair.reason]}. Not sure? Open their profiles to compare pictures, or paste a picture onto a card to keep it.
+      </p>
       <div className="dup-pair">
         <PersonMini p={a} />
         <span className="dup-and" aria-hidden>
@@ -205,14 +208,65 @@ export function MergeForm({ a, b, busy, onMerge, extra }: {
   );
 }
 
+const PROFILE_LABELS: Record<string, string> = { instagram: 'Instagram', linkedin: 'LinkedIn', discord: 'Discord', google: 'Google Contacts', facebook: 'Facebook' };
+
+/**
+ * One side of a possible duplicate, laid out to make "is this the same person?" easy: a big photo
+ * (paste or drop one in to save it), buttons to open each of their profiles, and the details we have.
+ */
 function PersonMini({ p }: { p: PersonListRow }) {
-  const details = [p.how_met, p.company, p.email, p.phone].filter(Boolean).slice(0, 2).join(' · ');
+  const { db, bump } = useStore();
+  const [dragging, setDragging] = useState(false);
+  const savePhoto = async (file: File | undefined) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    await updatePerson(db, p.id, { photo: await shrinkImage(file, 160) });
+    bump();
+  };
+  const profiles = Object.entries(p.links).filter(([s, href]) => href && s !== 'phone') as [string, string][];
+  const details = [
+    p.city && `📍 ${p.city}`,
+    p.birthday && `🎂 ${formatBirthday(p.birthday)}`,
+    p.how_met && `🤝 ${p.how_met}`,
+    p.company,
+    p.email,
+    p.phone,
+  ].filter(Boolean) as string[];
   return (
-    <Link to={`/person/${p.id}`} className="dup-person" title="Open their page">
-      <Avatar name={p.name} photo={p.photo} size={44} />
-      <span className="person-text">
-        <span className="person-name">{p.name}</span>
-        <span className="person-sub">{details || `Added ${formatDate(p.created_at.slice(0, 10))}`}</span>
+    <div
+      className={`dup-person${dragging ? ' dragging' : ''}`}
+      tabIndex={0}
+      title="Paste (Ctrl+V) or drop a picture here to save it as their photo"
+      onPaste={(e) => {
+        const img = [...e.clipboardData.files].find((x) => x.type.startsWith('image/'));
+        if (img) {
+          e.preventDefault();
+          savePhoto(img);
+        }
+      }}
+      onDragOver={(e) => {
+        if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) {
+          e.preventDefault();
+          setDragging(true);
+        }
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        setDragging(false);
+        const img = [...e.dataTransfer.files].find((x) => x.type.startsWith('image/'));
+        if (img) {
+          e.preventDefault();
+          savePhoto(img);
+        }
+      }}
+    >
+      <div className="dup-photo">
+        <Avatar name={p.name} photo={p.photo} size={72} />
+        {!p.photo && <span className="dup-photo-hint">No photo</span>}
+      </div>
+      <div className="person-text">
+        <Link to={`/person/${p.id}`} className="person-name" title="Open their page">
+          {p.name}
+        </Link>
         <span className="badges">
           {p.sources.map((s) => (
             <SourceIcon key={s} source={s} href={p.links[s]} />
@@ -221,7 +275,25 @@ function PersonMini({ p }: { p: PersonListRow }) {
             <TagChip key={t} tag={t} />
           ))}
         </span>
-      </span>
-    </Link>
+        {details.length > 0 ? (
+          <ul className="dup-details">
+            {details.slice(0, 4).map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        ) : (
+          <span className="person-sub">Added {formatDate(p.created_at.slice(0, 10))}</span>
+        )}
+        {profiles.length > 0 && (
+          <span className="dup-profiles">
+            {profiles.map(([s, href]) => (
+              <a key={s} className="btn ghost small" href={href} target="_blank" rel="noreferrer">
+                {PROFILE_LABELS[s] ?? s} ↗
+              </a>
+            ))}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
