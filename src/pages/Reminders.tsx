@@ -3,10 +3,17 @@ import { Empty, PageHead, PersonRow } from '@/components/ui';
 import { listPeople, updatePerson, type Person } from '@/db/people';
 import { daysBetween, daysUntilBirthday, followUpDue, isoDate, relativeDays } from '@/lib/dates';
 import { useQuery, useStore } from '@/lib/store';
+import { lastPhotoRound, photoQueue, PHOTO_ROUND_DAYS } from '@/db/photos';
 
 export function Reminders() {
   const { db, bump } = useStore();
   const people = useQuery(() => listPeople(db, { status: ['new', 'backlog', 'reviewed'] }));
+  // Monthly photo round: due when it's been a month (or never) and someone needs a picture.
+  const photos = useQuery(async () => {
+    const last = await lastPhotoRound(db);
+    const due = !last || Date.now() - new Date(last).getTime() > PHOTO_ROUND_DAYS * 86400000;
+    return { due, missing: due ? (await photoQueue(db)).length : 0 };
+  });
 
   const today = new Date();
   const followUps: { p: Person; days: number }[] = [];
@@ -34,12 +41,24 @@ export function Reminders() {
         <Link className="btn secondary" to="/birthdays">
           🎂 All birthdays
         </Link>
+        <Link className="btn secondary" to="/photos">
+          📸 Photo round
+        </Link>
       </PageHead>
       {people && !followUps.length && !birthdays.length && (
         <Empty>
           Nothing due this week. On someone's profile, set how often you want to keep in touch and add their birthday, and
           they'll show up here.
         </Empty>
+      )}
+      {photos?.due && photos.missing > 0 && (
+        <section className="card pad row-gap">
+          <span className="grow">
+            <strong>📸 Monthly photo round</strong>
+            <span className="block small muted">{photos.missing.toLocaleString()} people with an Instagram or LinkedIn link have no picture yet.</span>
+          </span>
+          <Link className="btn primary" to="/photos">Start</Link>
+        </section>
       )}
       {followUps.length > 0 && (
         <section>

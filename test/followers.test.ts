@@ -91,3 +91,23 @@ test('follow lists link to people, and archiving hides them', async () => {
   await setArchived(db, [club], false);
   assert.equal((await listPeople(db)).find((p) => p.id === club)!.status, 'reviewed');
 });
+
+test('photo round: Instagram first, missing photos first, done people wait a month', async () => {
+  const { photoQueue, markPhotoChecked } = await import('../src/db/photos.ts');
+  const db = fakeDb();
+  await migrate(db);
+  await ingest(db, 'instagram', parseInstagram(JSON.parse(followers('amy.l', 'bo.k'))));
+  const { ingest: ing } = await import('../src/sync/ingest.ts');
+  await ing(db, 'linkedin', [{ source: 'linkedin', externalId: 'https://www.linkedin.com/in/amyl', name: 'amy.l', handle: 'https://www.linkedin.com/in/amyl' } as any]);
+  const cy = await createPerson(db, { name: 'Cy (no links)' });
+  let q = await photoQueue(db);
+  assert.deepEqual(q.map((p) => [p.name, p.profiles.map((x) => x.source)]), [['amy.l', ['instagram', 'linkedin']], ['bo.k', ['instagram']]]);
+  await markPhotoChecked(db, q[0].id, 'data:image/jpeg;base64,xx');
+  await markPhotoChecked(db, q[1].id); // no picture to copy
+  assert.equal((await photoQueue(db)).length, 0);
+  // A month later, refresh mode asks again
+  await db.runAsync("UPDATE people SET photo_checked_at = '2020-01-01T00:00:00Z'");
+  q = await photoQueue(db, { refresh: true });
+  assert.deepEqual(q.map((p) => [p.name, !!p.photo]), [['bo.k', false], ['amy.l', true]]);
+  assert.ok(!q.some((p) => p.id === cy));
+});

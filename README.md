@@ -82,6 +82,17 @@ Find them again under the **Archived** filter, where you can **Unarchive**.
 
 The People list shows each source as its icon. It's in color and clickable when there's a link to their profile (Instagram, LinkedIn, Discord, Google Contacts, or tap to call), and gray when that source only gave a name (Facebook friends, for example). Exports don't include other people's profile pictures, and Instagram blocks websites from loading them. To add one, open their Instagram (or LinkedIn), right-click the picture → *Copy image*, and press Ctrl+V on their page. You can also drag the picture in.
 
+## Monthly photo round
+
+Instagram, LinkedIn and Facebook exports never include other people's profile pictures, and automated scraping breaks LinkedIn's and Instagram's terms and risks your account. Instead, **📸 Photo round** (from Reminders) speeds up doing it by hand:
+
+1. It lists everyone with an Instagram or LinkedIn link and no picture, closest people first, Instagram before LinkedIn.
+2. **Open Instagram** (or press Enter) opens their profile. Every profile reuses the same tab.
+3. Right-click their picture → *Copy image*, come back and press **Ctrl+V**. The picture is saved, and the next person comes up with their profile already open.
+4. **No picture to copy** / **Still the same** skips them for a month. **Skip** asks again next time.
+
+Tick *Also re-check people who already have a photo* to refresh pictures that may have changed. Reminders shows the round once a month, and **📅 Remind me monthly** adds a calendar reminder on the 1st.
+
 ## Ranking and closeness scores
 
 Every person has one **0–10 closeness score**, and every list sorts by it. There are no fixed buckets like "inner circle": friendships change, so scores do too.

@@ -28,6 +28,7 @@ export interface Person {
   /** What you set; null means "guess from where they came from" (see inferCircle). */
   circle: Circle | null;
   city: string | null;
+  photo_checked_at?: string | null;
   created_at: string;
   updated_at: string;
 }
