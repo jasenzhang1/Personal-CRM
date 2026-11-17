@@ -288,6 +288,11 @@ export function PersonPage() {
               Remove
             </button>
           )}
+          {person?.photo && (
+            <span className="small muted photo-date" title="When this picture was last fetched or checked">
+              {person.photo_checked_at ? `Updated ${formatDate(person.photo_checked_at.slice(0, 10))}` : 'From an import'}
+            </span>
+          )}
         </div>
         <div className="grow">
           <input className="name-input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Name" aria-label="Name" autoFocus={isNew} />

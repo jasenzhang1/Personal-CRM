@@ -82,6 +82,14 @@ Find them again under the **Archived** filter, where you can **Unarchive**.
 
 The People list shows each source as its icon. It's in color and clickable when there's a link to their profile (Instagram, LinkedIn, Discord, Google Contacts, or tap to call), and gray when that source only gave a name (Facebook friends, for example). Exports don't include other people's profile pictures, and Instagram blocks websites from loading them. To add one, open their Instagram (or LinkedIn), right-click the picture → *Copy image*, and press Ctrl+V on their page. You can also drag the picture in.
 
+## Profile pictures
+
+The People page shows **📸 how many people have pictures and when pictures were last updated**, and each photo on a person's page shows its date. **📸 Fetch pictures** gets every picture that can be fetched automatically:
+- **Gravatar**: the free profile picture people set up through WordPress, GitHub, Slack and others. It's checked with a scrambled (SHA-256) version of each email, never the email itself.
+- **Google**: if Sync with Google is set up, re-syncing brings in contacts' Google profile photos.
+
+The rest come from the monthly photo round below.
+
 ## Monthly photo round
 
 Instagram, LinkedIn and Facebook exports never include other people's profile pictures, and automated scraping breaks LinkedIn's and Instagram's terms and risks your account. Instead, **📸 Photo round** (from Reminders) speeds up doing it by hand:

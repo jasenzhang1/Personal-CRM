@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
+import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, PhotoIndicator, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
 import { inferCircle } from '@/lib/relationship';
 import { loadScores } from '@/db/ranking';
 import { nameReviewList } from '@/db/names';
+import { photoStatus } from '@/db/photos';
 import { listDuplicates } from '@/db/merge';
 import { allCities, setArchived, setCity } from '@/db/people';
 import { looksLikeOrganization } from '@/lib/orgs';
@@ -44,6 +45,7 @@ export function People() {
   }, [filter, search, tag]);
   const tags = useQuery(() => allTags(db), []);
   const cities = useQuery(() => allCities(db), []);
+  const photoInfo = useQuery(() => photoStatus(db), []);
   // One column per source you've imported from, in a fixed order, so icons line up row to row.
   const sourceCols = useQuery(async () => {
     const used = new Set((await db.getAllAsync<{ source: string }>('SELECT DISTINCT source FROM sources')).map((r) => r.source));
@@ -108,7 +110,25 @@ export function People() {
 
   return (
     <div className="page page-wide">
-      <PageHead title="People" sub={rows ? `${rows.length.toLocaleString()} ${rows.length === 1 ? 'person' : 'people'}` : undefined}>
+      <PageHead
+        title="People"
+        sub={
+          rows ? (
+            <>
+              {rows.length.toLocaleString()} {rows.length === 1 ? 'person' : 'people'}
+              {photoInfo && (
+                <>
+                  <br />
+                  <PhotoIndicator withPhoto={photoInfo.withPhoto} total={photoInfo.total} updatedAt={photoInfo.updatedAt} fetchLink={false} />
+                </>
+              )}
+            </>
+          ) : undefined
+        }
+      >
+        <Link className="btn secondary" to="/photos?fetch=1" title="Get profile pictures from Gravatar and Google, then copy the rest from Instagram/LinkedIn">
+          📸 Fetch pictures
+        </Link>
         {dupes > 0 && (
           <Link className="btn secondary" to="/duplicates" title="The same person imported twice">
             🔗 {dupes.toLocaleString()} possible {dupes === 1 ? 'duplicate' : 'duplicates'}

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
-import { Avatar, Empty, PageHead } from '@/components/ui';
-import { listPeople } from '@/db/people';
+import { Link, useSearchParams } from 'react-router';
+import { Avatar, Empty, PageHead, PhotoIndicator } from '@/components/ui';
+import { getSetting, listPeople } from '@/db/people';
+import { eachLimited, gravatarUrl, imageExists } from '@/lib/gravatar';
+import { fetchGoogleContacts } from '@/sync/google';
+import { ingest } from '@/sync/ingest';
 import { loadScores } from '@/db/ranking';
-import { lastPhotoRound, markPhotoChecked, photoQueue, photoRoundIcs, PHOTO_ROUND_DAYS, type PhotoTodo } from '@/db/photos';
+import { lastPhotoRound, markPhotoChecked, needEmailPhoto, notePhotosUpdated, photoQueue, photoRoundIcs, photoStatus, PHOTO_ROUND_DAYS, type PhotoTodo } from '@/db/photos';
 import { formatDate } from '@/lib/dates';
 import { shrinkImage } from '@/lib/image';
 import { useQuery, useStore } from '@/lib/store';
@@ -22,6 +25,62 @@ export function PhotoRound() {
   const [error, setError] = useState<string | null>(null);
   const pasteBox = useRef<HTMLDivElement>(null);
   const last = useQuery(() => lastPhotoRound(db), [done]);
+  const [round, setRound] = useState(0); // bump to rebuild the queue after fetching
+  const status = useQuery(() => photoStatus(db), [done, round]);
+  const googleId = useQuery(async () => (await getSetting(db, 'google_client_id')) ?? '', []);
+  const [fetching, setFetching] = useState<{ step: string; done: number; total: number } | null>(null);
+  const [fetchResult, setFetchResult] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+
+  /** Gravatar: free, public pictures linked to an email address. Sends only a scrambled (hashed) email. */
+  const fetchGravatars = async () => {
+    const todo = await needEmailPhoto(db);
+    let found = 0;
+    setFetching({ step: 'Checking Gravatar', done: 0, total: todo.length });
+    let n = 0;
+    await eachLimited(todo, 6, async (p) => {
+      const url = await gravatarUrl(p.email);
+      if (await imageExists(url)) {
+        await markPhotoChecked(db, p.id, url, false); // keeps d=404: if they remove it later, initials show instead of a placeholder
+        found++;
+      }
+      setFetching({ step: 'Checking Gravatar', done: ++n, total: todo.length });
+    });
+    return { found, checked: todo.length };
+  };
+
+  const fetchAll = async (withGoogle: boolean) => {
+    setFetchResult(null);
+    const before = (await photoStatus(db)).withPhoto;
+    const parts: string[] = [];
+    try {
+      const g = await fetchGravatars();
+      parts.push(`Gravatar: ${g.found} of ${g.checked} people with an email`);
+      if (withGoogle && googleId) {
+        setFetching({ step: 'Syncing Google contacts', done: 0, total: 0 });
+        await ingest(db, 'google', await fetchGoogleContacts(googleId));
+        parts.push('Google contacts synced');
+      }
+    } catch (e) {
+      parts.push(`Stopped: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      await notePhotosUpdated(db);
+      const after = (await photoStatus(db)).withPhoto;
+      setFetching(null);
+      setFetchResult(`Found ${(after - before).toLocaleString()} new ${after - before === 1 ? 'picture' : 'pictures'} (${parts.join(' · ')}).`);
+      setRound((r) => r + 1);
+      bump();
+    }
+  };
+
+  // "Fetch pictures" on People lands here with ?fetch=1: start right away.
+  useEffect(() => {
+    if (params.get('fetch') === '1' && !fetching) {
+      setParams({}, { replace: true });
+      fetchAll(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Build the queue once per round (closest people first); it doesn't reshuffle while you work.
   useEffect(() => {
@@ -32,7 +91,7 @@ export function PhotoRound() {
       setQueue(await photoQueue(db, { refresh, order }));
       setIndex(0);
     })();
-  }, [db, refresh]);
+  }, [db, refresh, round]);
 
   const current = queue?.[index];
   const open = (url: string) => window.open(url, PROFILE_TAB);
@@ -102,6 +161,42 @@ export function PhotoRound() {
         </button>
       </PageHead>
 
+      {status && <PhotoIndicator withPhoto={status.withPhoto} total={status.total} updatedAt={status.updatedAt} fetchLink={false} />}
+
+      <section className="card pad fetch-card">
+        <div className="row-gap">
+          <span className="grow">
+            <strong>Fetch automatically</strong>
+            <span className="block small muted">
+              Gravatar (the profile picture people set up through WordPress, GitHub, Slack and others; checked using a scrambled version of their email)
+              {googleId ? ' and your Google contacts’ photos' : ''}. Instagram and LinkedIn don’t allow this, so those are done by hand below.
+            </span>
+          </span>
+          <button type="button" className="btn primary" disabled={!!fetching} onClick={() => fetchAll(true)}>
+            {fetching ? 'Fetching…' : '📸 Fetch pictures'}
+          </button>
+        </div>
+        {fetching && (
+          <>
+            <span className="small muted">
+              {fetching.step}
+              {fetching.total ? ` · ${fetching.done.toLocaleString()} of ${fetching.total.toLocaleString()}` : '…'}
+            </span>
+            {fetching.total > 0 && (
+              <div className="fetch-progress">
+                <span style={{ width: `${(fetching.done / fetching.total) * 100}%` }} />
+              </div>
+            )}
+          </>
+        )}
+        {fetchResult && (
+          <p className="small" role="status">
+            ✓ {fetchResult} {queue && queue.length > 0 ? `${queue.length.toLocaleString()} still need one from Instagram or LinkedIn. Keep going below.` : ''}
+          </p>
+        )}
+      </section>
+
+      <h2 className="section-title">From Instagram & LinkedIn, by hand</h2>
       <div className="row-gap">
         <label className="check">
           <input type="checkbox" checked={refresh} onChange={(e) => setRefresh(e.target.checked)} />

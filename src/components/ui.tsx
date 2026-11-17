@@ -301,6 +301,24 @@ export function PageHead({ title, sub, children }: { title: string; sub?: ReactN
   );
 }
 
+/** "📸 312 of 1,693 have pictures · updated 3 days ago" with a Fetch pictures link. */
+export function PhotoIndicator({ withPhoto, total, updatedAt, fetchLink = true }: { withPhoto: number; total: number; updatedAt: string | null; fetchLink?: boolean }) {
+  const days = updatedAt ? Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86400000) : null;
+  const ago = days === null ? 'never fetched' : days === 0 ? 'updated today' : days === 1 ? 'updated yesterday' : `updated ${days} days ago`;
+  const stale = days === null || days > 30;
+  return (
+    <span className={`photo-indicator${stale ? ' stale' : ''}`} title={updatedAt ? `Pictures last updated ${new Date(updatedAt).toLocaleString()}` : 'Pictures have never been fetched'}>
+      📸 {withPhoto.toLocaleString()} of {total.toLocaleString()} have pictures · {ago}
+      {fetchLink && (
+        <>
+          {' · '}
+          <Link to="/photos?fetch=1">Fetch pictures</Link>
+        </>
+      )}
+    </span>
+  );
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="empty">{children}</p>;
 }

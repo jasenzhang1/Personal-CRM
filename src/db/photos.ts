@@ -8,6 +8,8 @@ import { profileUrl } from '@/lib/sourceLinks';
 
 export const PHOTO_ROUND_DAYS = 30;
 const LAST_ROUND_KEY = 'photo_round_at';
+/** Any time pictures were fetched or added: photo round, Fetch pictures, imports with photos. */
+const UPDATED_KEY = 'photos_updated_at';
 
 export interface PhotoTodo {
   id: number;
@@ -52,11 +54,31 @@ export async function photoQueue(db: SQLiteDatabase, opts: { refresh?: boolean; 
 }
 
 /** Save a new picture (or just note "checked, no change / no picture") for this month. */
-export async function markPhotoChecked(db: SQLiteDatabase, id: number, photo?: string) {
+/** `fromRound`: done by hand in the photo round (counts toward the monthly reminder); false for automatic fetches. */
+export async function markPhotoChecked(db: SQLiteDatabase, id: number, photo?: string, fromRound = true) {
   const t = new Date().toISOString();
   if (photo) await db.runAsync('UPDATE people SET photo = ?, photo_checked_at = ?, updated_at = ? WHERE id = ?', photo, t, t, id);
   else await db.runAsync('UPDATE people SET photo_checked_at = ? WHERE id = ?', t, id);
-  await setSetting(db, LAST_ROUND_KEY, t);
+  if (fromRound) await setSetting(db, LAST_ROUND_KEY, t);
+  if (photo) await setSetting(db, UPDATED_KEY, t);
+}
+
+/** Record that pictures were just fetched (even if none were new), for the "last updated" indicator. */
+export const notePhotosUpdated = (db: SQLiteDatabase) => setSetting(db, UPDATED_KEY, new Date().toISOString());
+
+/** How many active people have a picture, and when pictures were last fetched or added. */
+export async function photoStatus(db: SQLiteDatabase) {
+  const r = await db.getFirstAsync<{ total: number; with_photo: number }>(
+    "SELECT COUNT(*) AS total, SUM(CASE WHEN photo IS NOT NULL AND photo != '' THEN 1 ELSE 0 END) AS with_photo FROM people WHERE status != 'archived'",
+  );
+  return { total: r?.total ?? 0, withPhoto: r?.with_photo ?? 0, updatedAt: await getSetting(db, UPDATED_KEY) };
+}
+
+/** People with an email but no picture: the ones Gravatar might have a picture for. */
+export function needEmailPhoto(db: SQLiteDatabase) {
+  return db.getAllAsync<{ id: number; email: string }>(
+    "SELECT id, email FROM people WHERE status != 'archived' AND (photo IS NULL OR photo = '') AND email IS NOT NULL AND email LIKE '%@%'",
+  );
 }
 
 /** When you last did a photo round (any person), or null. */
