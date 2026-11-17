@@ -41,7 +41,7 @@ The **first** import from each source files everyone under **Older connections**
 
 ## Cleaning up names
 
-Instagram only exports usernames, so after an import some people are named like `john.smith_99` or `jackiezhang26`. **Clean up names** (button on People, or the link after an import) suggests a proper "First Last" for each one. Suggestions come from the name they use in your chats, from fixing capitals ("JOHN SMITH"), and from splitting the username using common first and last names.
+Instagram's followers and following lists only have usernames. Real names are read from your chats and from the smaller lists that include them (Close Friends, follow requests, recently unfollowed). Even so, after an import some people are named like `john.smith_99` or `jackiezhang26`. **Clean up names** (button on People, or the link after an import) suggests a proper "First Last" for each one. Suggestions come from the name they use in your chats, from fixing capitals ("JOHN SMITH"), and from splitting the username using common first and last names.
 
 - **Sure fixes** (a chat name, or a known first + last name like `eileen_chen7` → Eileen Chen) are applied automatically after every import. You can turn this off on the page.
 - **Guesses** (`zongyundeng` → Zongyun Deng) wait for you: edit, **Save**, **Keep as is**, or **Apply all**.

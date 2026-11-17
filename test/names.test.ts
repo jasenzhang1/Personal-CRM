@@ -99,3 +99,20 @@ test('Instagram import → sure fixes applied, guesses left for review, your cho
   await applyNameSuggestions(db, { all: true });
   assert.equal((await nameReviewList(db)).length, 0);
 });
+
+test('real names from Close Friends / follow requests become sure fixes', async () => {
+  const { parseInstagramNames, applyInstagramNames, isInstagramNameEntry } = await import('../src/sync/igNames.ts');
+  assert.ok(isInstagramNameEntry('ig.zip › connections/followers_and_following/close_friends.json'));
+  assert.ok(!isInstagramNameEntry('ig.zip › your_instagram_activity/threads/close_friends.json'));
+  const item = (u: string, n: string) => ({ label_values: [{ label: 'URL', value: `https://www.instagram.com/${u}` }, { label: 'Name', value: n }, { label: 'Username', value: u }], fbid: '1' });
+  const parsed = parseInstagramNames(JSON.stringify({ relationships_close_friends: [item('kkwon_', 'Kevin Kwon'), item('jose.a', 'JosÃ© Ã\u0081lvarez'), item('same', 'same')] }));
+  assert.deepEqual(parsed.map((p) => p.name), ['Kevin Kwon', 'José Álvarez']);
+  const db = fakeDb();
+  await migrate(db);
+  const follower = (u: string) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] });
+  await ingest(db, 'instagram', parseInstagram([follower('kkwon_'), follower('someone_else')]));
+  assert.equal(await applyInstagramNames(db, parsed), 1);
+  assert.equal(await applyInstagramNames(db, parsed), 0); // already there
+  const list = await nameReviewList(db);
+  assert.deepEqual(list.find((r) => r.name === 'kkwon_')!.suggestion, { name: 'Kevin Kwon', confidence: 'high', reason: 'chat' });
+});

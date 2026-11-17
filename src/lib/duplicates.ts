@@ -29,7 +29,7 @@ export interface DupPair {
 
 export const DUP_REASONS: Record<DupReason, string> = {
   'same-contact': 'Same email or phone number',
-  'chat-name': 'Same name as in your chats',
+  'chat-name': 'Same name they use on Instagram or in chats',
   'same-name': 'Same name',
   username: 'Username matches their name',
   suggested: 'Cleaned-up username matches their name',

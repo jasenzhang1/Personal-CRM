@@ -15,6 +15,7 @@ import { ingest, type IngestResult } from '@/sync/ingest';
 import { fromContactPicker, parseMany } from '@/sync/parsers';
 import { isMessageEntry, parseChats } from '@/sync/messages';
 import { describeChats, importChats } from '@/sync/activity';
+import { applyInstagramNames, isInstagramNameEntry, parseInstagramNames } from '@/sync/igNames';
 
 type FileSource = { key: string; title: string; link: string; linkLabel: string; drop: string; wait: string; steps: string[] };
 
@@ -134,12 +135,18 @@ export function Sync() {
     try {
       const { entries, notes } = await expandFiles(files);
       const chatEntries = entries.filter((e) => isMessageEntry(e.name));
-      const batch = parseMany(entries.filter((e) => !isMessageEntry(e.name)));
+      const nameEntries = entries.filter((e) => isInstagramNameEntry(e.name));
+      const batch = parseMany(entries.filter((e) => !isMessageEntry(e.name) && !isInstagramNameEntry(e.name)));
       const out: Log[] = notes.map((text) => ({ ok: false, text }));
       for (const f of batch.files) if (f.error) out.push({ ok: false, text: `${f.name}: ${f.error}` });
       for (const [kind, candidates] of batch.bySource) out.push({ ok: true, text: describe(await ingest(db, kind, await shrinkPhotos(candidates))) });
       // Chats last, so they can match people this same import just added.
       if (chatEntries.length) for (const r of await importChats(db, parseChats(chatEntries))) out.push({ ok: true, text: describeChats(r) });
+      // Close Friends and follow-request lists carry real names next to usernames.
+      if (nameEntries.length) {
+        const named = await applyInstagramNames(db, nameEntries.flatMap((e) => parseInstagramNames(e.text)));
+        if (named) out.push({ ok: true, text: `Found real names for ${named.toLocaleString()} Instagram ${named === 1 ? 'account' : 'accounts'} (from Close Friends and follow requests).` });
+      }
       if (!out.length) out.push({ ok: false, text: 'Nothing to import in those files.' });
       else if (out.some((l) => l.ok)) out.push(...(await cleanNames()));
       addLog(out);

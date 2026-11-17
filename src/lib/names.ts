@@ -20,7 +20,7 @@ export interface NameSuggestion {
 }
 
 export const REASON_LABELS: Record<NameReason, string> = {
-  chat: 'Name from your chats',
+  chat: 'Their name on Instagram or in chats',
   tidy: 'Fixed capitals / symbols',
   username: 'From their username',
   split: 'Guessed from their username',
