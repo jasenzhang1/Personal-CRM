@@ -43,7 +43,7 @@ const FILE_SOURCES: FileSource[] = [
     stepsTitle: 'Easiest: straight from your iPhone (iOS 16 or later, no iCloud needed)',
     steps: [
       'Open the Contacts app and tap Lists (top left). If you only see “Contacts”, tap ‹ Lists first.',
-      'Touch and hold All Contacts (or All iPhone), then tap Export → Done.',
+      'Press and hold the All Contacts row itself (not a person) until a menu pops up, then tap Export → Done. No need to select anyone.',
       'Send the file to where you use this site: Save to Files (to import on the iPhone), or AirDrop / Mail it to yourself (to import on your computer).',
       'Drop the .vcf in the box above. On the iPhone, tap the box and pick the file from Files.',
       'This includes every contact on the phone, even ones saved in Gmail or Outlook, plus their photos and birthdays.',
@@ -54,8 +54,9 @@ const FILE_SOURCES: FileSource[] = [
       linkLabel: 'Open iCloud Contacts',
       steps: [
         'Sign in with your Apple ID.',
-        'Click any contact, press Ctrl+A (⌘A on Mac) to select all.',
-        'Click ⋯ (or the ⚙︎ gear) → Export vCard, and drop the .vcf above.',
+        'Click one name in the middle list (not the card on the right), then press Ctrl+A (⌘A on Mac). There’s no Select all button: every name should highlight and the right side should say “… contacts selected”. Nothing highlighted? Click a name again and retry.',
+        'Click the ⋯ button above the list → Export vCard, and drop the .vcf above.',
+        'On a phone or iPad browser there’s no keyboard shortcut, so use the iPhone steps above instead.',
         'This only has the contacts your iPhone syncs to iCloud. Missing some? See below.',
       ],
     },
