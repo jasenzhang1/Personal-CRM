@@ -160,4 +160,17 @@ function usernameHasName(cu: string, cn: string): boolean {
   return false;
 }
 
+/** Does this Instagram username spell out this name? ("jackiezhang26" / "Jackie Zhang", "notarthurzhou" / "Arthur Zhou") */
+export const usernameSpellsName = (username: string, name: string) => usernameHasName(compact(username), compact(name));
+
 export const pairKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
+
+/** The name choices after a merge: both names (proper "First Last" first), plus a cleaned-up guess. */
+export function nameOptions(a: { name: string; handles?: string[] }, b: { name: string; handles?: string[] }) {
+  const opts: string[] = [];
+  const push = (n: string | undefined) => n && !opts.some((o) => o === n.trim()) && opts.push(n.trim());
+  const both = [a, b].sort((x, y) => Number(looksStandard(y.name)) - Number(looksStandard(x.name)));
+  for (const p of both) push(p.name);
+  if (!opts.some(looksStandard)) for (const p of both) push(suggestName({ name: p.name, usernames: p.handles })?.name);
+  return opts;
+}

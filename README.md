@@ -49,7 +49,9 @@ Instagram's followers and following lists only have usernames. Real names are re
 
 ## Merging duplicates
 
-The same person can end up in here twice, for example as an Instagram follower (`jackiezhang26`) and as a chat contact (Jackie Zhang). **Merge duplicates** (button on People, or the link after an import) lists likely pairs. It matches by the name someone uses in your chats, a username that spells out their name, exactly the same name, or the same email or phone. Pick the name to keep and press **Merge**, or **Not the same person** to stop seeing that pair. You can also merge anyone by hand from their page with **Merge with someone…**.
+The same person can end up in here twice, for example as an Instagram follower (`jackiezhang26`) and as a chat contact (Jackie Zhang). **Merge duplicates** (button on People, or the link after an import) lists likely pairs. It matches by the name someone uses in your chats, a username that spells out their name, exactly the same name, or the same email or phone. Pick the name to keep and press **Merge**, or **Not the same person** to stop seeing that pair. **Merge all** merges every likely pair at once. It keeps the proper "First Last" name and skips anyone who matches more than one person.
+
+Imports also try to avoid duplicates in the first place. An Instagram chat that doesn't match anyone by name is attached to the follower whose username spells that name (`jackiezhang26` → Jackie Zhang) or whose Instagram name matches, as long as exactly one follower fits. You can also merge anyone by hand from their page with **Merge with someone…**.
 
 Merging keeps everything from both copies: blank details are filled in, notes are combined, and tags, chats and call logs, rankings, pipeline history and import links all move to one person. Later imports of either account land on that person. A merge can't be undone, so download a backup before merging a lot at once.
 

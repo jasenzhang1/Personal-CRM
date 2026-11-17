@@ -500,3 +500,6 @@ a.source-badge.link:hover { background: color-mix(in srgb, currentColor 10%, tra
 .follow-list .person-right .btn { white-space: nowrap; }
 @media (max-width: 520px) { .follow-list .person-row { flex-wrap: wrap; } .follow-list .person-right { width: 100%; justify-content: flex-start; padding-left: 46px; } }
 .follow-list .person-sub { white-space: normal; overflow: visible; text-overflow: clip; }
+
+.merge-all { align-items: center; }
+.merge-all .grow { flex: 1 1 260px; }

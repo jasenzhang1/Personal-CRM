@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from '@/db/types';
 import { replaceInteractions } from '@/db/ranking';
 import type { ActivityDay } from '@/lib/ranking';
 import type { ChatSource, ThreadActivity } from './messages';
+import { usernameSpellsName } from '@/lib/duplicates';
 
 export interface ChatImportResult {
   source: ChatSource;
@@ -12,6 +13,8 @@ export interface ChatImportResult {
   messages: number;
   calls: number;
   callSeconds: number;
+  /** Matched to an Instagram follower because their username or Instagram name fits the chat name. */
+  linkedToFollower?: number;
 }
 
 /** Chats with someone not in your CRM become a new person once you've exchanged at least this many messages. */
@@ -25,6 +28,19 @@ const nameKey = (s: string) => s.normalize('NFKC').trim().toLowerCase().replace(
  * Discord user id → exactly one person with the same name. Busy chats with no match add a new person.
  */
 export async function importChats(db: SQLiteDatabase, threads: ThreadActivity[]): Promise<ChatImportResult[]> {
+  // Instagram followers/following, to attach a chat to the follower it belongs to instead of
+  // creating a second copy of that person (chats only include display names, not usernames).
+  const igAccounts = await db.getAllAsync<{ person_id: number; external_id: string; display_name: string | null }>(
+    "SELECT person_id, external_id, display_name FROM sources WHERE source = 'instagram' AND external_id NOT LIKE 'chat:%'",
+  );
+  const followerFor = (name: string): number | undefined => {
+    const ids = new Set(
+      igAccounts
+        .filter((a) => (a.display_name && nameKey(a.display_name) === nameKey(name)) || usernameSpellsName(a.external_id, name))
+        .map((a) => a.person_id),
+    );
+    return ids.size === 1 ? [...ids][0] : undefined; // only when it's clearly one person
+  };
   const people = await db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM people');
   const sources = await db.getAllAsync<{ person_id: number; source: string; external_id: string }>('SELECT person_id, source, external_id FROM sources');
   const bySource = new Map(sources.map((s) => [`${s.source}:${s.external_id.toLowerCase()}`, s.person_id]));
@@ -49,6 +65,10 @@ export async function importChats(db: SQLiteDatabase, threads: ThreadActivity[])
       if (personId === undefined && th.otherName) {
         const same = byName.get(nameKey(th.otherName)) ?? [];
         if (same.length === 1) personId = same[0];
+      }
+      if (personId === undefined && th.source === 'instagram' && th.otherName) {
+        personId = followerFor(th.otherName);
+        if (personId !== undefined) r.linkedToFollower = (r.linkedToFollower ?? 0) + 1;
       }
 
       if (personId === undefined) {
@@ -106,7 +126,7 @@ export function describeChats(r: ChatImportResult): string {
   const hours = r.callSeconds / 3600;
   const bits = [
     `${r.chats} one-on-one chats`,
-    `${r.matched} matched to people`,
+    `${r.matched} matched to people${r.linkedToFollower ? ` (${r.linkedToFollower} by their Instagram username)` : ''}`,
     r.created ? `${r.created} ${r.created === 1 ? 'person' : 'people'} you talk to added (Older connections)` : '',
     `${r.messages.toLocaleString()} messages`,
     r.calls ? `${r.calls} call${r.calls === 1 ? '' : 's'} (${hours >= 1 ? `${hours.toFixed(1)} h` : `${Math.round(r.callSeconds / 60)} min`})` : '',

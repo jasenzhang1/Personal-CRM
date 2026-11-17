@@ -75,11 +75,12 @@ test('merging keeps everything and future imports land on the kept person', asyn
   const db = fakeDb();
   await migrate(db);
   const follower = (u: string) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] });
-  await ingest(db, 'instagram', parseInstagram([follower('jackiezhang26')]));
+  // Chat first, follower later: the case the import can't prevent (the follower didn't exist yet).
   const chat = { source: 'instagram', threadId: 'jz_999', otherName: 'Jackie Zhang', messages: 30, calls: 1, callSeconds: 600, days: [{ day: '2026-11-10', messages: 30, calls: 1, call_seconds: 600 }] } as any;
   await importChats(db, [chat]);
+  await ingest(db, 'instagram', parseInstagram([follower('jackiezhang26')]));
   const all = await db.getAllAsync('SELECT id, name FROM people ORDER BY id');
-  const [ig, chatPerson] = all.map((r: any) => r.id);
+  const [chatPerson, ig] = all.map((r: any) => r.id);
   await db.runAsync("UPDATE people SET notes = 'Met at UCLA', birthday = '03-14' WHERE id = ?", chatPerson);
   await db.runAsync("UPDATE people SET notes = 'Loves boba', status = 'reviewed' WHERE id = ?", ig);
   await setTags(db, ig, ['UCLA']);
@@ -88,7 +89,7 @@ test('merging keeps everything and future imports land on the kept person', asyn
   await logInteraction(db, ig, '2026-11-10', 30);
 
   const pairs = await listDuplicates(db);
-  assert.deepEqual(pairs.map((p) => [p.a, p.b, p.reason]), [[ig, chatPerson, 'username']]);
+  assert.deepEqual(pairs.map((p) => [p.a, p.b, p.reason]), [[chatPerson, ig, 'username']]);
 
   await mergePeople(db, chatPerson, ig);
   const [p] = await db.getAllAsync('SELECT * FROM people');
@@ -157,4 +158,37 @@ test('linking an Instagram account by hand', async () => {
   const follower = (u: string) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] });
   await ingest(db, 'instagram', parseInstagram([follower('jane.doe')]));
   assert.equal((await listPeople(db)).length, 2);
+});
+
+test('an Instagram chat attaches to its follower instead of creating a second person', async () => {
+  const db = fakeDb();
+  await migrate(db);
+  const follower = (u: string) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] });
+  await ingest(db, 'instagram', parseInstagram([follower('jackiezhang26'), follower('zd_77'), follower('kevinlee1'), follower('kevin.lee.2')]));
+  await db.runAsync("UPDATE sources SET display_name = 'Zoe Deng' WHERE external_id = 'zd_77'"); // from Close Friends
+  const chat = (threadId: string, otherName: string, n = 30) =>
+    ({ source: 'instagram', threadId, otherName, messages: n, calls: 0, callSeconds: 0, days: [{ day: '2026-11-10', messages: n, calls: 0, call_seconds: 0 }] }) as any;
+  const [r] = await importChats(db, [chat('jz_1', 'Jackie Zhang'), chat('zoe_2', 'Zoe Deng', 3), chat('kl_3', 'Kevin Lee')]);
+  assert.equal(r.linkedToFollower, 2); // Jackie by username, Zoe by her Instagram name (even a small chat)
+  assert.equal(r.created, 1); // two Kevin Lee accounts: too ambiguous, so a new person
+  const names = (await db.getAllAsync('SELECT name FROM people')).map((x: any) => x.name).sort((x: string, y: string) => x.localeCompare(y));
+  assert.deepEqual(names, ['jackiezhang26', 'Kevin Lee', 'kevin.lee.2', 'kevinlee1', 'zd_77'].sort((x, y) => x.localeCompare(y)));
+  const jz = await db.getFirstAsync("SELECT SUM(i.messages) m FROM interactions i JOIN sources s ON s.person_id = i.person_id WHERE s.external_id = 'jackiezhang26'");
+  assert.equal(jz.m, 30);
+});
+
+test('merge all likely: skips anyone matching more than one person', async () => {
+  const { mergeAllLikely } = await import('../src/db/merge.ts');
+  const db = fakeDb();
+  await migrate(db);
+  const follower = (u: string) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] });
+  await ingest(db, 'instagram', parseInstagram([follower('amytran99'), follower('kevinlee1'), follower('kevin.lee.2')]));
+  await createPerson(db, { name: 'Amy Tran', notes: 'Roommate' });
+  await createPerson(db, { name: 'Kevin Lee' });
+  const before = (await listDuplicates(db)).filter((p) => p.strong).length;
+  assert.equal(before, 3);
+  assert.deepEqual(await mergeAllLikely(db), { merged: 1, skipped: 2 });
+  const amy = await db.getAllAsync("SELECT p.name, p.notes, s.external_id FROM people p JOIN sources s ON s.person_id = p.id WHERE p.name LIKE 'Amy%'");
+  assert.deepEqual(amy.map((x: any) => [x.name, x.notes, x.external_id]), [['Amy Tran', 'Roommate', 'amytran99']]);
+  assert.equal((await listDuplicates(db)).filter((p) => p.strong).length, 2); // the Kevin pairs are still there to check
 });

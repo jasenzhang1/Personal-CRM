@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 import type { Person } from './people';
-import { findDuplicates, pairKey, type DupPair, type DupPerson } from '@/lib/duplicates';
+import { findDuplicates, nameOptions, pairKey, type DupPair, type DupPerson } from '@/lib/duplicates';
 import { looksStandard } from '@/lib/names';
 
 /** Possible duplicate pairs, minus the ones you said aren't the same person. */
@@ -86,4 +86,27 @@ export async function mergePeople(db: SQLiteDatabase, keepId: number, dropId: nu
     await db.runAsync('DELETE FROM not_duplicates WHERE a = ? OR b = ?', dropId, dropId);
     await db.runAsync('DELETE FROM people WHERE id = ?', dropId);
   });
+}
+
+/**
+ * Merge every "likely the same" pair in one go. Someone who matches more than one person
+ * (a contact "Kevin Lee" vs both @kevinlee1 and @kevin.lee.2) is left for you to decide.
+ * Each merge keeps the record with more on it and the proper "First Last" name.
+ */
+export async function mergeAllLikely(db: SQLiteDatabase): Promise<{ merged: number; skipped: number }> {
+  const pairs = (await listDuplicates(db)).filter((p) => p.strong);
+  const seen = new Map<number, number>();
+  for (const p of pairs) for (const id of [p.a, p.b]) seen.set(id, (seen.get(id) ?? 0) + 1);
+  const clear = pairs.filter((p) => seen.get(p.a) === 1 && seen.get(p.b) === 1);
+  let merged = 0;
+  for (const p of clear) {
+    const a = await db.getFirstAsync<Person>('SELECT * FROM people WHERE id = ?', p.a);
+    const b = await db.getFirstAsync<Person>('SELECT * FROM people WHERE id = ?', p.b);
+    if (!a || !b) continue;
+    const [keep, drop] = (await richness(db, b)) > (await richness(db, a)) ? [b, a] : [a, b];
+    const name = nameOptions(keep, drop)[0];
+    await mergePeople(db, keep.id, drop.id, looksStandard(name) && name !== keep.name ? name : undefined);
+    merged++;
+  }
+  return { merged, skipped: pairs.length - clear.length };
 }

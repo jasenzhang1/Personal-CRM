@@ -1,10 +1,9 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Avatar, Empty, PageHead, Pager, SourceBadge, TagChip } from '@/components/ui';
-import { dismissDuplicate, listDuplicates, mergePeople, richness } from '@/db/merge';
+import { dismissDuplicate, listDuplicates, mergeAllLikely, mergePeople, richness } from '@/db/merge';
 import { getPerson, listPeople, type Person, type PersonListRow } from '@/db/people';
-import { DUP_REASONS, type DupPair } from '@/lib/duplicates';
-import { looksStandard, suggestName } from '@/lib/names';
+import { DUP_REASONS, nameOptions, type DupPair } from '@/lib/duplicates';
 import { formatDate } from '@/lib/dates';
 import { useQuery, useStore } from '@/lib/store';
 
@@ -15,6 +14,7 @@ export function Duplicates() {
   const [tab, setTab] = useState<'likely' | 'maybe'>('likely');
   const [page, setPage] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [busyAll, setBusyAll] = useState(false);
 
   const data = useQuery(async () => {
     const pairs = await listDuplicates(db);
@@ -50,6 +50,32 @@ export function Duplicates() {
               Maybe · {maybe.length.toLocaleString()}
             </button>
           </div>
+          {tab === 'likely' && likely.length > 1 && (
+            <section className="card pad row-gap merge-all">
+              <span className="small grow">
+                Merge all {likely.length.toLocaleString()} likely pairs at once. Each keeps the proper “First Last” name, and anyone who matches more than one person is left for you to
+                check. Merges can’t be undone, so <Link to="/sync">download a backup</Link> first.
+              </span>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={busyAll}
+                onClick={async () => {
+                  if (!confirm(`Merge ${likely.length.toLocaleString()} likely duplicate pairs? This can't be undone.`)) return;
+                  setBusyAll(true);
+                  try {
+                    const { merged, skipped } = await mergeAllLikely(db);
+                    setNotice(`Merged ${merged.toLocaleString()} pairs.${skipped ? ` ${skipped.toLocaleString()} left below because they match more than one person.` : ''}`);
+                    bump();
+                  } finally {
+                    setBusyAll(false);
+                  }
+                }}
+              >
+                {busyAll ? 'Merging…' : `Merge all ${likely.length.toLocaleString()}`}
+              </button>
+            </section>
+          )}
           {shown.length === 0 && <Empty>Nothing here.</Empty>}
           <div className="stack">
             {shown.slice(pg * PAGE, (pg + 1) * PAGE).map((pair) => (
@@ -126,16 +152,6 @@ function PairCard({ pair, a, b, onMerge, onDismiss }: {
       />
     </section>
   );
-}
-
-/** The name choices after a merge: both names (proper "First Last" first), plus a cleaned-up guess. */
-export function nameOptions(a: { name: string; handles?: string[] }, b: { name: string; handles?: string[] }) {
-  const opts: string[] = [];
-  const push = (n: string | undefined) => n && !opts.some((o) => o === n.trim()) && opts.push(n.trim());
-  const both = [a, b].sort((x, y) => Number(looksStandard(y.name)) - Number(looksStandard(x.name)));
-  for (const p of both) push(p.name);
-  if (!opts.some(looksStandard)) for (const p of both) push(suggestName({ name: p.name, usernames: p.handles })?.name);
-  return opts;
 }
 
 export function MergeForm({ a, b, busy, onMerge, extra }: {
