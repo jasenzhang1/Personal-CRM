@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -73,7 +73,7 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
 
   if (current < 3) {
     await db.execAsync(`
-      -- Beli-style ranking: one ordered list (pos 0 = closest), split into tiers.
+      -- Old tier-based ranking; version 4 below replaces it.
       CREATE TABLE IF NOT EXISTS rankings (
         person_id INTEGER PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE,
         tier TEXT NOT NULL,       -- inner | close | casual
@@ -90,6 +90,28 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
         call_seconds INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (person_id, day, source)
       );
+    `);
+  }
+
+  const rankingCols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(rankings)');
+  if (current < 4 && rankingCols.some((c) => c.name === 'tier')) {
+    await db.execAsync(`
+      -- No more fixed tiers: each placed person keeps the score you gave them, plus their activity
+      -- at that moment so later activity can nudge it. Old tier rankings keep their order, 10 → 1.
+      CREATE TABLE rankings_v4 (
+        person_id INTEGER PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE,
+        base REAL NOT NULL,       -- 0–10 score when last placed
+        act_at REAL,              -- activity score then (null = measure from the next load)
+        ranked_at TEXT NOT NULL
+      );
+      INSERT INTO rankings_v4 (person_id, base, act_at, ranked_at)
+        SELECT person_id,
+               ROUND(10 - 9.0 * (ROW_NUMBER() OVER w - 1) / MAX(COUNT(*) OVER () - 1, 1), 1),
+               NULL, ranked_at
+        FROM rankings
+        WINDOW w AS (ORDER BY CASE tier WHEN 'inner' THEN 0 WHEN 'close' THEN 1 ELSE 2 END, pos);
+      DROP TABLE rankings;
+      ALTER TABLE rankings_v4 RENAME TO rankings;
     `);
   }
 

@@ -100,10 +100,11 @@ export function TagInput({ value, onChange, suggestions }: { value: string[]; on
 }
 
 /** Beli-style 0–10 closeness score with a small bar. */
-export function ScoreBadge({ score, rank, title }: { score: number; rank?: number; title?: string }) {
+/** 0–10 closeness. `guess` = estimated from activity, not yet confirmed by you (shown faded). */
+export function ScoreBadge({ score, rank, title, guess }: { score: number; rank?: number; title?: string; guess?: boolean }) {
   const level = score >= 7 ? 'high' : score >= 4 ? 'mid' : score > 0 ? 'low' : 'none';
   return (
-    <span className={`score ${level}`} title={title} aria-label={`Closeness score ${score.toFixed(1)} out of 10`}>
+    <span className={`score ${level}${guess && score > 0 ? ' guess' : ''}`} title={title} aria-label={`Closeness score ${score.toFixed(1)} out of 10${guess ? ', estimated' : ''}`}>
       <span className="score-num">{score.toFixed(1)}</span>
       <span className="score-bar">
         <span style={{ width: `${score * 10}%` }} />

@@ -380,6 +380,7 @@ code.copy { cursor: copy; }
 .score.high .score-num { color: var(--good); }
 .score.mid { --bar: #fdab3d; }
 .score.low { --bar: var(--primary); }
+.score.guess .score-num, .score.guess .score-bar { opacity: 0.55; }
 .score.none .score-num { color: var(--muted); font-weight: 500; }
 @media (max-width: 520px) { .score-bar, .score-rank { display: none; } }
 
@@ -402,16 +403,7 @@ code.copy { cursor: copy; }
 .rank-list .person-right { gap: 2px; }
 @media (max-width: 520px) { .rank-list .person-right .btn { padding: 5px 6px; } }
 
-.rank-hero { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 12px 0; }
-.rank-hero h1 { font-size: 24px; }
-.tier-picks { display: grid; gap: 10px; max-width: 560px; width: 100%; margin: 0 auto; }
-.tier-pick {
-  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; text-align: left;
-  background: var(--surface); border: 2px solid var(--border); border-radius: 14px; padding: 14px 16px; cursor: pointer; font: inherit; color: inherit;
-}
-.tier-pick:hover, .tier-pick:focus-visible { border-color: var(--tier); }
-.tier-pick.suggested { border-color: var(--tier); background: color-mix(in srgb, var(--tier) 8%, var(--surface)); }
-.tier-emoji { grid-row: span 2; font-size: 30px; }
+.rank-extra { justify-content: center; }
 
 .matchup { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 8px 0 24px; }
 .matchup h1 { font-size: 24px; }

@@ -20,7 +20,7 @@ type CircleFilter = 'any' | Circle | 'unset';
 
 const PAGE = 150;
 
-type Row = PersonListRow & { circleShown: Circle | null; guessed: boolean; score: number; why: string };
+type Row = PersonListRow & { circleShown: Circle | null; guessed: boolean; score: number; guess: boolean; why: string };
 
 export function People() {
   const { db, bump } = useStore();
@@ -43,7 +43,7 @@ export function People() {
     const out: Row[] = people.list.map((p) => {
       const guess = inferCircle(p.sources, !!p.stage);
       const s = people.scores.get(p.id)!;
-      return { ...p, circleShown: p.circle ?? guess, guessed: !p.circle && !!guess, score: s.score, why: describeScoreInfo(s) };
+      return { ...p, circleShown: p.circle ?? guess, guessed: !p.circle && !!guess, score: s.score, guess: !s.placed, why: describeScoreInfo(s) };
     });
     const filtered = circle === 'any' ? out : out.filter((r) => (circle === 'unset' ? !r.circleShown : r.circleShown === circle || r.circleShown === 'both'));
     if (sort === 'score') filtered.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
@@ -124,7 +124,7 @@ export function People() {
             <span role="columnheader">Person</span>
             <span role="columnheader">Type</span>
             <span role="columnheader">Tags</span>
-            <span role="columnheader" title="0–10: your ranking (or hearts) plus how much you've been talking lately">
+            <span role="columnheader" title="0–10. Faded = guessed from how much you talk; play Rank to set it yourself.">
               Closeness
             </span>
             <span role="columnheader">Connected on</span>
@@ -159,7 +159,7 @@ export function People() {
                   ))}
                 </span>
                 <span className="pt-score" role="cell">
-                  <ScoreBadge score={r.score} rank={sort === 'score' && r.score > 0 ? i + 1 : undefined} title={r.why} />
+                  <ScoreBadge score={r.score} rank={sort === 'score' && r.score > 0 ? i + 1 : undefined} title={r.why} guess={r.guess} />
                 </span>
                 <span className="pt-sources badges" role="cell">
                   {r.sources.map((s) => <SourceBadge key={s} source={s} />)}

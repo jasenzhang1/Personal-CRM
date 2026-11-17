@@ -2,30 +2,37 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Avatar, Empty, PageHead, ScoreBadge } from '@/components/ui';
 import { listPeople, type PersonListRow } from '@/db/people';
-import { confirmRanking, listRanking, loadScores, placePerson, removeRanking, swapRanking } from '@/db/ranking';
+import { loadScores, setPlacement } from '@/db/ranking';
 import {
   answerPlacement,
+  assignRanks,
+  describeScoreInfo,
   nextOpponent,
+  nextToPlace,
+  placedScore,
   questionsLeft,
   startPlacement,
-  tierFromHearts,
-  tierInfo,
-  TIERS,
   type Placement,
-  type RankedRow,
   type ScoreInfo,
-  type Tier,
 } from '@/lib/ranking';
 import { useQuery, useStore } from '@/lib/store';
 
-type Mode =
-  | { kind: 'overview' }
-  | { kind: 'tier'; personId: number }
-  | { kind: 'place'; placement: Placement }
-  | { kind: 'checkin'; subjectId: number; opponentId: number; dir: 'up' | 'down'; triedDown: boolean; asked: number; moved: number }
-  | { kind: 'done'; text: string };
+type Pool = { people: Map<number, PersonListRow>; scores: Map<number, ScoreInfo> };
 
-const CHECKIN_QUESTIONS = 6;
+type Mode =
+  | { kind: 'overview'; notice?: string }
+  | {
+      kind: 'play';
+      placement: Placement;
+      /** Started from "rank this person": stop after them instead of carrying on. */
+      single: boolean;
+      round: number;
+      last?: string;
+      skip: Set<number>;
+      pool: Pool;
+    };
+
+const LIST_PAGE = 50;
 
 export function Rank() {
   const { db, bump } = useStore();
@@ -33,291 +40,254 @@ export function Rank() {
   const [params, setParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>({ kind: 'overview' });
   const [search, setSearch] = useState('');
+  const [shown, setShown] = useState(LIST_PAGE);
 
-  const data = useQuery(async () => {
+  const data = useQuery(async (): Promise<Pool> => {
     const people = await listPeople(db, { status: ['new', 'backlog', 'reviewed'] });
-    const ranking = await listRanking(db);
     const scores = await loadScores(db, people);
-    return { people: new Map(people.map((p) => [p.id, p])), ranking, scores };
+    return { people: new Map(people.map((p) => [p.id, p])), scores };
   });
+
+  /** Everyone with a score, closest first: who you get compared against. */
+  const ladder = (pool: Pool, without: number) =>
+    [...pool.scores]
+      .filter(([id, s]) => id !== without && s.score > 0)
+      .sort((a, b) => b[1].score - a[1].score)
+      .map(([id, s]) => ({ id, score: s.score }));
+
+  const begin = (pool: Pool, personId: number, opts: { single: boolean; round: number; skip: Set<number>; last?: string }) => {
+    const placement = startPlacement(personId, ladder(pool, personId));
+    if (nextOpponent(placement) === null) return finish(pool, placement, { ...opts });
+    setMode({ kind: 'play', placement, pool, ...opts });
+  };
+
+  const play = (pool: Pool, round: number, skip: Set<number>, last?: string) => {
+    const next = nextToPlace(pool.scores, skip);
+    if (next === null) {
+      bump();
+      return setMode({ kind: 'overview', notice: last ? `${last} That's everyone for now. Nice work!` : 'Nobody to rank yet. Import some chats or contacts first.' });
+    }
+    begin(pool, next, { single: false, round, skip, last });
+  };
+
+  /** Save a score and update the in-memory pool so the next round sees it straight away. */
+  const commit = async (pool: Pool, personId: number, score: number) => {
+    const prev = pool.scores.get(personId)!;
+    await setPlacement(db, personId, score, prev.activity);
+    const scores = new Map(pool.scores);
+    scores.set(personId, { ...prev, score, placed: true, drift: 0, rankedAt: new Date().toISOString(), drifting: false, growing: false });
+    assignRanks(scores);
+    return { ...pool, scores };
+  };
+
+  const finish = async (pool: Pool, placement: Placement, opts: { single: boolean; round: number; skip: Set<number> }) => {
+    const score = placedScore(placement);
+    const fresh = await commit(pool, placement.personId, score);
+    const s = fresh.scores.get(placement.personId)!;
+    const text = `${pool.people.get(placement.personId)?.name} → ${score.toFixed(1)} (#${s.rank}).`;
+    const skip = new Set(opts.skip).add(placement.personId);
+    if (opts.single) {
+      bump();
+      return setMode({ kind: 'overview', notice: text });
+    }
+    play(fresh, opts.round + 1, skip, text);
+  };
 
   // /rank?person=12 jumps straight into placing that person.
   const requested = Number(params.get('person')) || null;
   useEffect(() => {
     if (requested && data?.people.has(requested)) {
-      setMode({ kind: 'tier', personId: requested });
       setParams({}, { replace: true });
+      begin(data, requested, { single: true, round: 1, skip: new Set() });
     }
-  }, [requested, data, setParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested, data]);
 
-  const unranked = useMemo(() => {
+  const everyone = useMemo(() => {
     if (!data) return [];
-    const ranked = new Set(data.ranking.map((r) => r.person_id));
-    return [...data.people.values()]
-      .filter((p) => !ranked.has(p.id))
-      .map((p) => ({ p, s: data.scores.get(p.id)! }))
-      .sort((a, b) => b.s.activity - a.s.activity || b.p.closeness - a.p.closeness || a.p.name.localeCompare(b.p.name));
+    return [...data.scores]
+      .filter(([, s]) => s.score > 0)
+      .sort((a, b) => b[1].score - a[1].score)
+      .map(([id, s]) => ({ p: data.people.get(id)!, s }))
+      .filter((x) => x.p);
   }, [data]);
 
   if (!data) return null;
-  const person = (id: number) => data.people.get(id);
-  const ranking = data.ranking;
 
-  /* ---------- placing ---------- */
-  const chooseTier = async (personId: number, tier: Tier) => {
-    const order = ranking.filter((r) => r.tier === tier).map((r) => r.person_id);
-    const p = startPlacement(personId, tier, order);
-    if (nextOpponent(p) === null) await finishPlacement(p);
-    else setMode({ kind: 'place', placement: p });
-  };
-
-  const finishPlacement = async (p: Placement) => {
-    await placePerson(db, p.personId, p.tier, p.lo);
-    const fresh = await listRanking(db);
-    const overall = fresh.findIndex((r) => r.person_id === p.personId) + 1;
-    bump();
-    setMode({ kind: 'done', text: `${person(p.personId)?.name} is #${overall} overall, #${p.lo + 1} in ${tierInfo(p.tier)!.label}.` });
-  };
-
-  const answer = async (a: 'new' | 'other' | 'tie') => {
-    if (mode.kind !== 'place') return;
-    const next = answerPlacement(mode.placement, a);
-    if (nextOpponent(next) === null) await finishPlacement(next);
-    else setMode({ kind: 'place', placement: next });
-  };
-
-  /* ---------- quick check-in ---------- */
-  const startCheckin = (asked = 0, moved = 0, rows: RankedRow[] = ranking) => {
-    if (rows.length < 2 || asked >= CHECKIN_QUESTIONS) {
-      bump();
-      return setMode({ kind: 'done', text: moved ? `Rankings refreshed: ${moved} ${moved === 1 ? 'person moved' : 'people moved'}.` : 'Rankings confirmed. Nothing changed.' });
-    }
-    // Whoever you confirmed longest ago (ties broken randomly) gets checked against their neighbours.
-    const stale = [...rows].sort((a, b) => a.ranked_at.localeCompare(b.ranked_at) || Math.random() - 0.5)[0];
-    const k = rows.findIndex((r) => r.person_id === stale.person_id);
-    if (k > 0) setMode({ kind: 'checkin', subjectId: stale.person_id, opponentId: rows[k - 1].person_id, dir: 'up', triedDown: false, asked, moved });
-    else setMode({ kind: 'checkin', subjectId: stale.person_id, opponentId: rows[k + 1].person_id, dir: 'down', triedDown: true, asked, moved });
-  };
-
-  const answerCheckin = async (pick: 'subject' | 'opponent' | 'tie') => {
-    if (mode.kind !== 'checkin') return;
-    const rows = await listRanking(db);
-    const s = rows.find((r) => r.person_id === mode.subjectId)!;
-    const o = rows.find((r) => r.person_id === mode.opponentId)!;
-    const asked = mode.asked + 1;
-    const moves = (mode.dir === 'up' && pick === 'subject') || (mode.dir === 'down' && pick === 'opponent');
-    if (moves) {
-      await swapRanking(db, s, o);
-      const after = await listRanking(db);
-      const k = after.findIndex((r) => r.person_id === s.person_id);
-      const nextIdx = mode.dir === 'up' ? k - 1 : k + 1;
-      if (asked < CHECKIN_QUESTIONS && after[nextIdx])
-        return setMode({ ...mode, opponentId: after[nextIdx].person_id, asked, moved: mode.moved + 1 });
-      return startCheckin(asked, mode.moved + 1, after);
-    }
-    if (pick !== 'tie' && mode.dir === 'up' && !mode.triedDown) {
-      const k = rows.findIndex((r) => r.person_id === s.person_id);
-      if (rows[k + 1] && asked < CHECKIN_QUESTIONS)
-        return setMode({ ...mode, opponentId: rows[k + 1].person_id, dir: 'down', triedDown: true, asked });
-    }
-    await confirmRanking(db, s.person_id, o.person_id);
-    startCheckin(asked, mode.moved, await listRanking(db));
-  };
-
-  /* ---------- views ---------- */
-  if (mode.kind === 'tier') {
-    const p = person(mode.personId);
-    if (!p) return null;
-    const suggested = tierFromHearts(p.closeness);
-    const current = ranking.find((r) => r.person_id === p.id)?.tier;
+  /* ---------- the game ---------- */
+  if (mode.kind === 'play') {
+    const { placement, pool } = mode;
+    const a = pool.people.get(placement.personId)!;
+    const b = pool.people.get(nextOpponent(placement)!)!;
+    const left = questionsLeft(placement);
+    const answer = (x: 'new' | 'other' | 'tie') => {
+      const next = answerPlacement(placement, x);
+      if (nextOpponent(next) === null) finish(pool, next, mode);
+      else setMode({ ...mode, placement: next });
+    };
+    const notClose = async () => {
+      const fresh = await commit(pool, a.id, 0);
+      const text = `${a.name} → 0 (not close).`;
+      if (mode.single) {
+        bump();
+        return setMode({ kind: 'overview', notice: text });
+      }
+      play(fresh, mode.round + 1, new Set(mode.skip).add(a.id), text);
+    };
+    const skip = () => (mode.single ? setMode({ kind: 'overview' }) : play(pool, mode.round, new Set(mode.skip).add(a.id), mode.last));
     return (
       <div className="page rank-page">
-        <BackBar onBack={() => setMode({ kind: 'overview' })} />
-        <div className="rank-hero">
-          <Avatar name={p.name} photo={p.photo} size={96} />
-          <h1>How close are you to {p.name}?</h1>
+        <div className="row-gap">
+          <button type="button" className="btn ghost" onClick={() => { bump(); setMode({ kind: 'overview', notice: mode.last }); }}>
+            ← {mode.single ? 'Back' : 'Done for now'}
+          </button>
+          {mode.last && <span className="small muted" role="status">{mode.last}</span>}
         </div>
-        <div className="tier-picks">
-          {TIERS.map((t) => (
-            <button key={t.key} type="button" className={`tier-pick${t.key === (current ?? suggested) ? ' suggested' : ''}`} style={{ ['--tier' as string]: t.color }} onClick={() => chooseTier(p.id, t.key)}>
-              <span className="tier-emoji">{t.emoji}</span>
-              <strong>{t.label}</strong>
-              <span className="muted small">{t.hint}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (mode.kind === 'place') {
-    const a = person(mode.placement.personId)!;
-    const b = person(nextOpponent(mode.placement)!)!;
-    const left = questionsLeft(mode.placement);
-    return (
-      <div className="page rank-page">
-        <BackBar onBack={() => setMode({ kind: 'overview' })} />
         <Matchup
-          question="Who are you closer to?"
-          hint={`${tierInfo(mode.placement.tier)!.emoji} ${tierInfo(mode.placement.tier)!.label} · about ${left} more ${left === 1 ? 'question' : 'questions'}`}
+          question="Who are you closer to these days?"
+          hint={`${mode.single ? '' : `Round ${mode.round} · `}placing ${a.name} · about ${left} more ${left === 1 ? 'question' : 'questions'}`}
           a={a}
           b={b}
           onA={() => answer('new')}
           onB={() => answer('other')}
           onTie={() => answer('tie')}
         />
+        <div className="row-gap rank-extra">
+          <button type="button" className="btn ghost small" onClick={skip}>Skip {a.name.split(' ')[0]}</button>
+          <button type="button" className="btn ghost small" onClick={notClose}>Not close to {a.name.split(' ')[0]} anymore</button>
+        </div>
       </div>
     );
   }
 
-  if (mode.kind === 'checkin') {
-    const s = person(mode.subjectId);
-    const o = person(mode.opponentId);
-    if (!s || !o) return null;
-    // Keep the higher-ranked person on the left so it reads naturally.
-    const [left, right] = mode.dir === 'up' ? [o, s] : [s, o];
-    const pick = (who: PersonListRow) => answerCheckin(who.id === s.id ? 'subject' : 'opponent');
-    return (
-      <div className="page rank-page">
-        <BackBar onBack={() => { bump(); setMode({ kind: 'overview' }); }} />
-        <Matchup
-          question="These days, who are you closer to?"
-          hint={`Quick check-in · ${mode.asked + 1} of ${CHECKIN_QUESTIONS}`}
-          a={left}
-          b={right}
-          onA={() => pick(left)}
-          onB={() => pick(right)}
-          onTie={() => answerCheckin('tie')}
-          tieLabel="About the same"
-        />
-      </div>
-    );
-  }
-
-  const topUnranked = unranked.filter((u) => !search || u.p.name.toLowerCase().includes(search.toLowerCase())).slice(0, search ? 30 : 8);
-  const drifting = [...data.scores].filter(([, s]) => s.drifting).map(([id, s]) => ({ p: person(id)!, s })).filter((x) => x.p).sort((a, b) => (b.s.feel ?? 0) - (a.s.feel ?? 0)).slice(0, 6);
+  /* ---------- overview ---------- */
+  const upNextId = nextToPlace(data.scores, new Set());
+  const upNext = upNextId !== null ? data.people.get(upNextId) : undefined;
+  const placedCount = everyone.filter((x) => x.s.placed).length;
+  const q = search.trim().toLowerCase();
+  const found = q ? [...data.people.values()].filter((p) => p.name.toLowerCase().includes(q)).slice(0, 20) : [];
+  const growing = everyone.filter((x) => x.s.growing).slice(0, 6);
+  const drifting = everyone.filter((x) => x.s.drifting).sort((a, b) => a.s.drift - b.s.drift).slice(0, 6);
 
   return (
     <div className="page rank-page">
-      <PageHead title="Rank" sub="Rank friends against each other, Beli-style. Scores also rise and fall with how much you actually talk." />
+      <PageHead
+        title="Rank"
+        sub="Everyone gets one closeness score from 0 to 10. It starts as a guess from how much you talk. Comparing people sets it, and it keeps moving as you talk more or less."
+      />
 
-      {mode.kind === 'done' && (
-        <p className="notice" role="status">
-          🎉 {mode.text}{' '}
-          {unranked[0] && (
-            <button type="button" className="link-btn" style={{ color: 'var(--primary)' }} onClick={() => setMode({ kind: 'tier', personId: unranked[0].p.id })}>
-              Rank {unranked[0].p.name} next →
-            </button>
-          )}
-        </p>
-      )}
+      {mode.notice && <p className="notice" role="status">🎉 {mode.notice}</p>}
 
       <div className="rank-actions">
         <section className="card pad stack">
-          <h2 className="card-title">⚡ Quick check-in</h2>
-          <p className="muted small">Friendships change. Answer {CHECKIN_QUESTIONS} quick matchups and anyone who's grown closer moves up.</p>
-          <button type="button" className="btn primary" disabled={ranking.length < 2} onClick={() => startCheckin()}>
-            {ranking.length < 2 ? 'Rank 2+ people first' : 'Start check-in'}
+          <h2 className="card-title">▶ Play</h2>
+          <p className="muted small">
+            Answer “who are you closer to?” Each round places one person, and you can keep going as long as you like. The game starts with people it has only guessed at, then
+            re-checks anyone whose score has moved.
+          </p>
+          {upNext && (
+            <p className="small">
+              Up next: <strong>{upNext.name}</strong>
+            </p>
+          )}
+          <button type="button" className="btn primary" disabled={!upNext || everyone.length < 2} onClick={() => play(data, 1, new Set())}>
+            {everyone.length < 2 ? 'Import chats or contacts first' : 'Play'}
           </button>
+          <p className="muted small">
+            {placedCount} placed by you · {everyone.length - placedCount} still guessed from activity
+          </p>
         </section>
         <section className="card pad stack">
-          <h2 className="card-title">➕ Rank someone</h2>
+          <h2 className="card-title">🔎 Rank someone specific</h2>
           <input className="input" type="search" placeholder="Search anyone…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search people to rank" />
-          {!search && topUnranked.length > 0 && <p className="muted small">Suggested: the people you talk to most.</p>}
           <ul className="list">
-            {topUnranked.map(({ p, s }) => (
+            {found.map((p) => (
               <li key={p.id} className="person-row">
-                <button type="button" className="person-link pick-btn" onClick={() => setMode({ kind: 'tier', personId: p.id })}>
+                <button type="button" className="person-link pick-btn" onClick={() => begin(data, p.id, { single: true, round: 1, skip: new Set() })}>
                   <Avatar name={p.name} photo={p.photo} size={32} />
                   <span className="person-text">
                     <span className="person-name">{p.name}</span>
-                    {s.activity > 0 && <span className="person-sub">Activity {s.activity.toFixed(1)}</span>}
                   </span>
                 </button>
-              </li>
-            ))}
-          </ul>
-          {!topUnranked.length && <p className="muted small">{search ? 'No one by that name left to rank.' : 'Everyone is ranked!'}</p>}
-        </section>
-      </div>
-
-      {drifting.length > 0 && (
-        <section>
-          <h2 className="section-title">Drifting apart · reach out?</h2>
-          <ul className="list card">
-            {drifting.map(({ p, s }) => (
-              <li key={p.id} className="person-row">
-                <Link to={`/person/${p.id}`} className="person-link">
-                  <Avatar name={p.name} photo={p.photo} size={32} />
-                  <span className="person-text">
-                    <span className="person-name">{p.name}</span>
-                    <span className="person-sub">Close, but quiet lately{p.last_contacted ? ` · last talked ${p.last_contacted}` : ''}</span>
-                  </span>
-                </Link>
                 <div className="person-right">
-                  <ScoreBadge score={s.score} />
+                  <ScoreBadge score={data.scores.get(p.id)?.score ?? 0} />
                 </div>
               </li>
             ))}
           </ul>
+          {q && !found.length && <p className="muted small">No one by that name.</p>}
         </section>
+      </div>
+
+      {growing.length > 0 && (
+        <MiniList title="Growing closer · you've talked a lot more lately" rows={growing} sub={(s) => `+${s.drift.toFixed(1)} since you placed them`} onRerank={(id) => begin(data, id, { single: true, round: 1, skip: new Set() })} />
+      )}
+      {drifting.length > 0 && (
+        <MiniList title="Drifting apart · reach out?" rows={drifting} sub={(s) => `${s.drift.toFixed(1)} since you placed them`} onRerank={(id) => begin(data, id, { single: true, round: 1, skip: new Set() })} />
       )}
 
-      {ranking.length === 0 ? (
-        <Empty>No one ranked yet. Pick someone above: choose a tier, then answer “who are you closer to?” a few times.</Empty>
+      {everyone.length === 0 ? (
+        <Empty>No scores yet. Import your Instagram, Facebook or Discord messages, or search for someone above to rank them.</Empty>
       ) : (
-        TIERS.map((t) => {
-          const rows = ranking.filter((r) => r.tier === t.key);
-          if (!rows.length) return null;
-          return (
-            <section key={t.key}>
-              <h2 className="section-title" style={{ color: t.color }}>
-                {t.emoji} {t.label} · {rows.length}
-              </h2>
-              <ol className="list card rank-list">
-                {rows.map((r) => {
-                  const p = person(r.person_id);
-                  const s = data.scores.get(r.person_id);
-                  if (!p || !s) return null;
-                  return <RankRow key={r.person_id} p={p} s={s} onRerank={() => setMode({ kind: 'tier', personId: p.id })} onRemove={async () => { await removeRanking(db, p.id); bump(); }} onOpen={() => navigate(`/person/${p.id}`)} />;
-                })}
-              </ol>
-            </section>
-          );
-        })
+        <section>
+          <h2 className="section-title">Everyone, closest first · {everyone.length}</h2>
+          <ol className="list card rank-list">
+            {everyone.slice(0, shown).map(({ p, s }) => (
+              <li key={p.id} className="person-row">
+                <span className="rank-num">{s.rank}</span>
+                <button type="button" className="person-link pick-btn" onClick={() => navigate(`/person/${p.id}`)}>
+                  <Avatar name={p.name} photo={p.photo} size={32} />
+                  <span className="person-text">
+                    <span className="person-name">{p.name}</span>
+                    <span className="person-sub">{s.placed ? describeScoreInfo(s) : '≈ guessed from activity'}</span>
+                  </span>
+                </button>
+                <div className="person-right">
+                  <ScoreBadge score={s.score} guess={!s.placed} />
+                  <button type="button" className="btn ghost small" onClick={() => begin(data, p.id, { single: true, round: 1, skip: new Set() })}>
+                    {s.placed ? 'Re-rank' : 'Rank'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ol>
+          {everyone.length > shown && (
+            <button type="button" className="btn secondary" onClick={() => setShown((n) => n + LIST_PAGE * 2)}>
+              Show more
+            </button>
+          )}
+        </section>
       )}
     </div>
   );
 }
 
-function RankRow({ p, s, onRerank, onRemove, onOpen }: { p: PersonListRow; s: ScoreInfo; onRerank: () => void; onRemove: () => void; onOpen: () => void }) {
+function MiniList({ title, rows, sub, onRerank }: { title: string; rows: { p: PersonListRow; s: ScoreInfo }[]; sub: (s: ScoreInfo) => string; onRerank: (id: number) => void }) {
   return (
-    <li className="person-row">
-      <span className="rank-num">{s.rank}</span>
-      <button type="button" className="person-link pick-btn" onClick={onOpen}>
-        <Avatar name={p.name} photo={p.photo} size={32} />
-        <span className="person-text">
-          <span className="person-name">{p.name}</span>
-          <span className="person-sub">
-            Ranking {s.feel?.toFixed(1)} · activity {s.activity.toFixed(1)}
-            {s.drifting ? ' · drifting' : ''}
-          </span>
-        </span>
-      </button>
-      <div className="person-right">
-        <ScoreBadge score={s.score} />
-        <button type="button" className="btn ghost small" onClick={onRerank} title="Place them again">
-          Re-rank
-        </button>
-        <button type="button" className="btn ghost small" onClick={onRemove} aria-label={`Remove ${p.name} from ranking`} title="Remove from ranking">
-          ×
-        </button>
-      </div>
-    </li>
+    <section>
+      <h2 className="section-title">{title}</h2>
+      <ul className="list card">
+        {rows.map(({ p, s }) => (
+          <li key={p.id} className="person-row">
+            <Link to={`/person/${p.id}`} className="person-link">
+              <Avatar name={p.name} photo={p.photo} size={32} />
+              <span className="person-text">
+                <span className="person-name">{p.name}</span>
+                <span className="person-sub">{sub(s)}</span>
+              </span>
+            </Link>
+            <div className="person-right">
+              <ScoreBadge score={s.score} />
+              <button type="button" className="btn ghost small" onClick={() => onRerank(p.id)}>Re-rank</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
-function Matchup({ question, hint, a, b, onA, onB, onTie, tieLabel = 'Too close to call' }: {
+function Matchup({ question, hint, a, b, onA, onB, onTie }: {
   question: string;
   hint: string;
   a: PersonListRow;
@@ -325,7 +295,6 @@ function Matchup({ question, hint, a, b, onA, onB, onTie, tieLabel = 'Too close 
   onA: () => void;
   onB: () => void;
   onTie: () => void;
-  tieLabel?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -346,9 +315,9 @@ function Matchup({ question, hint, a, b, onA, onB, onTie, tieLabel = 'Too close 
         <MatchCard p={b} onClick={onB} />
       </div>
       <button type="button" className="btn secondary" onClick={onTie}>
-        {tieLabel}
+        About the same
       </button>
-      <p className="muted small hide-mobile">Tip: ← and → keys pick, ↓ for a tie.</p>
+      <p className="muted small hide-mobile">Tip: ← and → keys pick, ↓ for “about the same”.</p>
     </div>
   );
 }
@@ -361,15 +330,5 @@ function MatchCard({ p, onClick }: { p: PersonListRow; onClick: () => void }) {
       <strong>{p.name}</strong>
       {sub && <span className="muted small">{sub}</span>}
     </button>
-  );
-}
-
-function BackBar({ onBack }: { onBack: () => void }) {
-  return (
-    <div>
-      <button type="button" className="btn ghost" onClick={onBack}>
-        ← Back to rankings
-      </button>
-    </div>
   );
 }

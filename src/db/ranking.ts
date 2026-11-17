@@ -1,45 +1,25 @@
 import type { SQLiteDatabase } from './types';
 import { isoDate } from '@/lib/dates';
-import { activityScore, orderRanking, rankScores, scoreInfo, type ActivityDay, type RankedRow, type ScoreInfo, type Tier } from '@/lib/ranking';
+import { activityScore, assignRanks, scoreInfo, type ActivityDay, type RankedRow, type ScoreInfo } from '@/lib/ranking';
 
 const now = () => new Date().toISOString();
 
 export function listRanking(db: SQLiteDatabase) {
-  return db.getAllAsync<RankedRow>('SELECT * FROM rankings').then(orderRanking);
+  return db.getAllAsync<RankedRow>('SELECT * FROM rankings');
 }
 
-/** Put someone at `index` (0 = closest) within a tier, after removing them from wherever they were. */
-export async function placePerson(db: SQLiteDatabase, personId: number, tier: Tier, index: number) {
-  const tierRows = (await db.getAllAsync<RankedRow>('SELECT * FROM rankings WHERE tier = ? AND person_id != ? ORDER BY pos', tier, personId)).map(
-    (r) => r.person_id,
+/** Save where the game placed someone: their new score, and their activity right now. */
+export async function setPlacement(db: SQLiteDatabase, personId: number, score: number, activity: number) {
+  await db.runAsync(
+    `INSERT INTO rankings (person_id, base, act_at, ranked_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (person_id) DO UPDATE SET base = excluded.base, act_at = excluded.act_at, ranked_at = excluded.ranked_at`,
+    personId, score, activity, now(),
   );
-  tierRows.splice(Math.max(0, Math.min(index, tierRows.length)), 0, personId);
-  const t = now();
-  await db.withTransactionAsync(async () => {
-    await db.runAsync('DELETE FROM rankings WHERE person_id = ?', personId);
-    for (const [pos, id] of tierRows.entries()) {
-      if (id === personId) await db.runAsync('INSERT INTO rankings (person_id, tier, pos, ranked_at) VALUES (?, ?, ?, ?)', id, tier, pos, t);
-      else await db.runAsync('UPDATE rankings SET pos = ? WHERE person_id = ?', pos, id);
-    }
-  });
 }
 
+/** Forget a placement: they go back to an estimate from activity. */
 export async function removeRanking(db: SQLiteDatabase, personId: number) {
   await db.runAsync('DELETE FROM rankings WHERE person_id = ?', personId);
-}
-
-/** Swap two people's spots (and tiers): used by quick check-ins when someone moves up. */
-export async function swapRanking(db: SQLiteDatabase, a: RankedRow, b: RankedRow) {
-  const t = now();
-  await db.withTransactionAsync(async () => {
-    await db.runAsync('UPDATE rankings SET tier = ?, pos = ?, ranked_at = ? WHERE person_id = ?', b.tier, b.pos, t, a.person_id);
-    await db.runAsync('UPDATE rankings SET tier = ?, pos = ?, ranked_at = ? WHERE person_id = ?', a.tier, a.pos, t, b.person_id);
-  });
-}
-
-export async function confirmRanking(db: SQLiteDatabase, ...personIds: number[]) {
-  const t = now();
-  for (const id of personIds) await db.runAsync('UPDATE rankings SET ranked_at = ? WHERE person_id = ?', t, id);
 }
 
 /* ---------------- activity ---------------- */
@@ -134,28 +114,28 @@ export async function replaceInteractions(db: SQLiteDatabase, source: string, pe
   });
 }
 
-/** Score for everyone: ranking + hearts + activity. */
+/**
+ * Score for everyone in `people`, with `rank` set among all of them. Pass everyone (not a filtered
+ * list) when the rank number matters.
+ */
 export async function loadScores(
   db: SQLiteDatabase,
   people: { id: number; closeness: number; last_contacted: string | null }[],
   today = new Date(),
 ): Promise<Map<number, ScoreInfo>> {
-  const ranking = await listRanking(db);
-  const ranks = rankScores(ranking);
-  const tiers = new Map(ranking.map((r) => [r.person_id, r.tier]));
+  const rows = new Map((await listRanking(db)).map((r) => [r.person_id, r]));
   const activity = await activityByPerson(db);
   const out = new Map<number, ScoreInfo>();
   for (const p of people) {
-    const r = ranks.get(p.id);
-    out.set(
-      p.id,
-      scoreInfo({
-        ranked: r ? { feel: r.feel, rank: r.rank, tier: tiers.get(p.id)! } : undefined,
-        hearts: p.closeness,
-        activity: activityScore(activity.get(p.id) ?? [], p.last_contacted, today),
-        hasHistory: !!p.last_contacted || !!activity.get(p.id)?.length,
-      }),
-    );
+    const act = activityScore(activity.get(p.id) ?? [], p.last_contacted, today);
+    const row = rows.get(p.id);
+    // Placements carried over from before activity was tracked start drifting from today.
+    if (row && row.act_at === null) {
+      row.act_at = act;
+      await db.runAsync('UPDATE rankings SET act_at = ? WHERE person_id = ?', act, p.id);
+    }
+    out.set(p.id, scoreInfo({ row, hearts: p.closeness, activity: act }));
   }
+  assignRanks(out);
   return out;
 }

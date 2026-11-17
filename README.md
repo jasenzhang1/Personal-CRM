@@ -41,12 +41,12 @@ The **first** import from each source files everyone under **Older connections**
 
 ## Ranking and closeness scores
 
-Every person has a Beli-style **0–10 closeness score**, and the People list sorts by it.
+Every person has one **0–10 closeness score**, and every list sorts by it. There are no fixed buckets like "inner circle": friendships change, so scores do too.
 
-- **Rank** page: pick a tier (Inner circle, Good friends, Acquaintances), then answer "who are you closer to?" a few times. A binary search places them, so even with 200 people ranked it takes about 7 taps. Their spot in the tier sets the ranking part of the score.
-- **Activity** makes up the rest: messages, calls (longer calls count more; a 1-hour call counts a lot) and hangouts you log on someone's page. It fades with a 60-day half-life, so scores fall when you drift apart and rise when you reconnect.
-- **Quick check-in**: 6 matchups that re-check the people you confirmed longest ago and move anyone who's grown closer.
-- **Drifting apart**: close friends you used to talk to but haven't lately.
+- **Starts as a guess.** Before you do anything, everyone is scored from how much you talk (messages, calls, and hangouts you log). Guesses look faded.
+- **The game sets it.** On the **Rank** page, press **Play** and answer "who are you closer to?" Each round places one person with a binary search, so about 7–10 taps even with hundreds of people. Their new score is halfway between the two people they landed between, so the order and the scores always agree. Keep playing as long as you like. The game starts with the highest guesses, then re-checks anyone whose score has moved.
+- **Then it keeps moving.** After you place someone, their score follows changes in how much you talk, at half speed. A 1-hour call pushes it up, and going quiet for months pulls it down. **Growing closer** and **Drifting apart** list the biggest moves.
+- **Big changes.** **Re-rank** places someone again. **Not close anymore** (on their page or during the game) drops them straight to 0.
 
 Chat counts come from the Instagram, Facebook (Messenger) and Discord exports when they include Messages. Only one-on-one chats count. Only daily message counts and call lengths are kept, never message text. A chat is matched to a person by an earlier link, then by Instagram username or Discord user ID, then by exact name. A busy chat (20+ messages) with no match becomes a new person under Older connections. Re-importing a newer export replaces the old counts instead of adding to them.
 

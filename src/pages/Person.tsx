@@ -11,6 +11,7 @@ import {
   getPerson,
   getSources,
   getStageEvents,
+  listPeople,
   setStage,
   updatePerson,
   type Person,
@@ -22,8 +23,8 @@ import { CIRCLES, circleInfo, CLOSENESS_LABELS, FOLLOW_UPS, PRIORITIES, STAGES, 
 import { formatBirthday, formatDate, isoDate, isValidBirthday } from '@/lib/dates';
 import { shrinkImage } from '@/lib/image';
 import { inferCircle } from '@/lib/relationship';
-import { activitySummary, loadScores, logInteraction } from '@/db/ranking';
-import { describeScoreInfo, tierInfo } from '@/lib/ranking';
+import { activitySummary, loadScores, logInteraction, removeRanking, setPlacement } from '@/db/ranking';
+import { describeScoreInfo, type ScoreInfo } from '@/lib/ranking';
 import { useQuery, useStore } from '@/lib/store';
 
 type Form = {
@@ -102,9 +103,11 @@ export function PersonPage() {
   const tagSuggestions = useQuery(() => allTags(db), []);
   const standing = useQuery(async () => {
     if (id === null || !person) return null;
-    const scores = await loadScores(db, [person]);
-    const total = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM rankings');
-    return { s: scores.get(id)!, rankedCount: total?.n ?? 0, activity: await activitySummary(db, id) };
+    // Rank among everyone, so "#3 of 240" means the same thing here as on the Rank page.
+    const all = await listPeople(db, { status: ['new', 'backlog', 'reviewed'] });
+    const scores = await loadScores(db, all.some((p) => p.id === id) ? all : [...all, person]);
+    const withScore = [...scores.values()].filter((s) => s.score > 0).length;
+    return { s: scores.get(id)!, withScore, activity: await activitySummary(db, id) };
   }, [id, person]);
   const [logMinutes, setLogMinutes] = useState('60');
   const [logDay, setLogDay] = useState(isoDate());
@@ -323,15 +326,23 @@ export function PersonPage() {
           {id !== null && standing && (
             <Card title="Closeness score">
               <div className="row-gap">
-                <ScoreBadge score={standing.s.score} />
-                <span className="small">
-                  {standing.s.ranked
-                    ? `#${standing.s.rank} of ${standing.rankedCount} · ${tierInfo(standing.s.tier)!.emoji} ${tierInfo(standing.s.tier)!.label}`
-                    : 'Not ranked yet'}
-                </span>
+                <ScoreBadge score={standing.s.score} guess={!standing.s.placed} />
+                <ScoreRankText s={standing.s} of={standing.withScore} />
                 <Link className="btn secondary small" to={`/rank?person=${id}`}>
-                  {standing.s.ranked ? 'Re-rank' : '🏆 Rank them'}
+                  {standing.s.placed ? 'Re-rank' : '🏆 Rank them'}
                 </Link>
+              </div>
+              <div className="row-gap">
+                {standing.s.score > 0 && (
+                  <button type="button" className="btn ghost small" onClick={async () => { await setPlacement(db, id, 0, standing.s.activity); bump(); }}>
+                    Not close anymore (set to 0)
+                  </button>
+                )}
+                {standing.s.placed && (
+                  <button type="button" className="btn ghost small" onClick={async () => { await removeRanking(db, id); bump(); }}>
+                    Go back to the activity guess
+                  </button>
+                )}
               </div>
               <span className="small muted">{describeScoreInfo(standing.s)}</span>
               <ActivityLine a={standing.activity} />
@@ -486,4 +497,9 @@ function ActivityLine({ a }: { a: import('@/db/ranking').ActivitySummary }) {
       <strong>Last 90 days:</strong> {recent || 'quiet'}. <span className="muted">All time: {a.messagesAll.toLocaleString()} messages{a.callsAll ? `, ${a.callsAll} ${a.callsAll === 1 ? 'call / hangout' : 'calls / hangouts'} (${dur(a.callSecondsAll)})` : ''}{a.lastDay ? ` · last ${formatDate(a.lastDay)}` : ''}.</span>
     </span>
   );
+}
+
+function ScoreRankText({ s, of }: { s: ScoreInfo; of: number }) {
+  if (s.score <= 0) return <span className="small">{s.placed ? 'Not close right now' : 'No score yet'}</span>;
+  return <span className="small">#{s.rank} of {of}{s.placed ? '' : ' · guessed'}</span>;
 }
