@@ -18,22 +18,77 @@ import { describeChats, importChats } from '@/sync/activity';
 import { applyInstagramNames, isInstagramNameEntry, parseInstagramNames } from '@/sync/igNames';
 import { describeFollowSync, exportDateOf, followListKind, isUnfollowedByMeEntry, parseFollowList, recordUnfollowedByMe, syncFollowList } from '@/sync/igFollows';
 
-type FileSource = { key: string; title: string; link: string; linkLabel: string; drop: string; wait: string; steps: string[] };
+type FileSource = {
+  key: string;
+  title: string;
+  link?: string;
+  linkLabel?: string;
+  drop: string;
+  wait: string;
+  steps: string[];
+  /** Optional heading over the main steps, when there's also an alternative. */
+  stepsTitle?: string;
+  /** A second way to do it, e.g. iCloud.com instead of the iPhone itself. */
+  alt?: { title: string; link?: string; linkLabel?: string; steps: string[] };
+  /** Troubleshooting, collapsed by default. */
+  help?: { title: string; items: { q: string; a: string[] }[] };
+};
 
 const FILE_SOURCES: FileSource[] = [
   {
     key: 'phone',
     title: 'iPhone contacts',
-    link: 'https://www.icloud.com/contacts/',
-    linkLabel: 'Open iCloud Contacts',
     drop: 'the .vcf file',
     wait: 'Instant',
+    stepsTitle: 'Easiest: straight from your iPhone (iOS 16 or later, no iCloud needed)',
     steps: [
-      'Sign in with your Apple ID.',
-      'Click any contact, press Ctrl+A (⌘A on Mac) to select all.',
-      'Click ⋯ (or the ⚙︎ gear) → Export vCard. Drop the .vcf here.',
-      'Contact photos come along too. Imported before? Drop it again to add any missing photos.',
+      'Open the Contacts app and tap Lists (top left). If you only see “Contacts”, tap ‹ Lists first.',
+      'Touch and hold All Contacts (or All iPhone), then tap Export → Done.',
+      'Send the file to where you use this site: Save to Files (to import on the iPhone), or AirDrop / Mail it to yourself (to import on your computer).',
+      'Drop the .vcf in the box above. On the iPhone, tap the box and pick the file from Files.',
+      'This includes every contact on the phone, even ones saved in Gmail or Outlook, plus their photos and birthdays.',
     ],
+    alt: {
+      title: 'Or from iCloud.com (on a computer)',
+      link: 'https://www.icloud.com/contacts/',
+      linkLabel: 'Open iCloud Contacts',
+      steps: [
+        'Sign in with your Apple ID.',
+        'Click any contact, press Ctrl+A (⌘A on Mac) to select all.',
+        'Click ⋯ (or the ⚙︎ gear) → Export vCard, and drop the .vcf above.',
+        'This only has the contacts your iPhone syncs to iCloud. Missing some? See below.',
+      ],
+    },
+    help: {
+      title: 'Contacts missing on iCloud.com?',
+      items: [
+        {
+          q: 'Turn on iCloud Contacts on your iPhone',
+          a: [
+            'Settings → tap your name → iCloud.',
+            'Under “Saved to iCloud”, tap See All (or Show All), then Contacts, and turn on Sync this iPhone (on older iOS, just switch Contacts on).',
+            'If it asks what to do with contacts already on your iPhone, choose Merge.',
+            'Stay on Wi-Fi for a few minutes, then refresh iCloud.com. The count at the top should match your iPhone.',
+          ],
+        },
+        {
+          q: 'Check where your contacts are saved',
+          a: [
+            'In the Contacts app, tap Lists. You’ll see each account (iCloud, Gmail, Outlook, “iPhone”) with how many contacts it has.',
+            'Only the iCloud ones show up on iCloud.com. Gmail contacts: use “Sync with Google” on this page, or export from the iPhone (above), which includes everything.',
+            'Contacts under “iPhone” are only on the phone. Turning on iCloud Contacts and choosing Merge moves them to iCloud.',
+          ],
+        },
+        {
+          q: 'Make new contacts go to iCloud',
+          a: ['Settings → Apps → Contacts → Default Account → iCloud (on older iOS: Settings → Contacts → Default Account).'],
+        },
+        {
+          q: 'Already imported an older copy?',
+          a: ['Just import the new file. People you already have are matched by phone, email or name, so nobody is duplicated, and only new people are added.'],
+        },
+      ],
+    },
   },
   {
     key: 'linkedin',
@@ -277,7 +332,7 @@ export function Sync() {
           type="file"
           multiple
           hidden
-          accept=".zip,.vcf,.vcard,.csv,.json,application/zip,text/vcard,text/csv,application/json"
+          accept=".zip,.vcf,.vcard,.csv,.json,.html,application/zip,text/vcard,text/x-vcard,text/csv,application/json,text/html"
           onChange={(e) => {
             if (e.target.files?.length) importFiles(Array.from(e.target.files));
             e.target.value = '';
@@ -321,14 +376,47 @@ export function Sync() {
               <h3 className="card-title grow">{s.title}</h3>
             </header>
             {sourceStatus(s.key)}
-            <a className="btn secondary block" href={s.link} target="_blank" rel="noreferrer">
-              {s.linkLabel} ↗
-            </a>
+            {s.link && (
+              <a className="btn secondary block" href={s.link} target="_blank" rel="noreferrer">
+                {s.linkLabel} ↗
+              </a>
+            )}
+            {s.stepsTitle && <h4 className="steps-title">{s.stepsTitle}</h4>}
             <ol className="steps">
               {s.steps.map((st) => (
                 <li key={st}>{st}</li>
               ))}
             </ol>
+            {s.alt && (
+              <>
+                <h4 className="steps-title">{s.alt.title}</h4>
+                {s.alt.link && (
+                  <a className="btn ghost small" href={s.alt.link} target="_blank" rel="noreferrer">
+                    {s.alt.linkLabel} ↗
+                  </a>
+                )}
+                <ol className="steps">
+                  {s.alt.steps.map((st) => (
+                    <li key={st}>{st}</li>
+                  ))}
+                </ol>
+              </>
+            )}
+            {s.help && (
+              <details className="help">
+                <summary>{s.help.title}</summary>
+                {s.help.items.map((item) => (
+                  <div key={item.q} className="help-item">
+                    <strong className="small">{item.q}</strong>
+                    <ul className="steps">
+                      {item.a.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </details>
+            )}
             <p className="muted small">
               Wait: {s.wait}. Then drop {s.drop} in the box above.
             </p>

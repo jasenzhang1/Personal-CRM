@@ -29,7 +29,7 @@ The **Import & settings** page has a button for each source that opens the right
 | Source | How |
 | --- | --- |
 | Gmail & Google Contacts | **Live sync** with a "Sync with Google" button. It pulls your saved contacts and everyone you've emailed. One-time setup: create a free Google OAuth Client ID (walkthrough on the page). |
-| iPhone | icloud.com/contacts → select all → Export vCard → drop the `.vcf` |
+| iPhone | Easiest (iOS 16+): Contacts app → Lists → touch and hold All Contacts → Export → drop the `.vcf`. This has every contact on the phone, no iCloud needed. Or icloud.com/contacts → select all → Export vCard, which only has contacts synced to iCloud. The Import page explains how to turn on iCloud Contacts if some are missing. |
 | LinkedIn | Request the "larger data archive" (it includes Connections) → drop the `.zip` |
 | Instagram | Download your information → Followers and following, JSON → drop the `.zip` |
 | Facebook | Download your information → Friends (JSON or HTML) → drop the `.zip`. Tick Personal information too to bring in the phone contacts you once uploaded to Facebook. |
