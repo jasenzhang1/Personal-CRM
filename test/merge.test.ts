@@ -137,3 +137,24 @@ test('username matching avoids look-alike names', () => {
   const chat = findDuplicates([{ ...P(1, '_stephen007_', '_stephen007_'), sources: [{ source: 'instagram', external_id: 'chat:s_1', handle: null, display_name: 'Stephen' }] }, P(2, 'Stephen')]);
   assert.deepEqual(chat.map((p) => p.strong), [false]);
 });
+
+test('linking an Instagram account by hand', async () => {
+  const { addInstagramAccount, parseInstagramUsername, listPeople } = await import('../src/db/people.ts');
+  assert.equal(parseInstagramUsername('@jane.doe'), 'jane.doe');
+  assert.equal(parseInstagramUsername('https://www.instagram.com/jane.doe/?hl=en'), 'jane.doe');
+  assert.equal(parseInstagramUsername('instagram.com/_u/Jane_Doe'), 'Jane_Doe');
+  assert.equal(parseInstagramUsername('jane doe'), null);
+  const db = fakeDb();
+  await migrate(db);
+  const jane = await createPerson(db, { name: 'Jane Doe' });
+  const bob = await createPerson(db, { name: 'Bob' });
+  assert.deepEqual(await addInstagramAccount(db, jane, 'instagram.com/Jane.Doe'), { ok: true, username: 'Jane.Doe' });
+  assert.equal((await listPeople(db)).find((p) => p.id === jane)!.ig_handle, 'Jane.Doe');
+  const clash = await addInstagramAccount(db, bob, '@jane.doe');
+  assert.equal(clash.ok, false);
+  assert.equal((clash as any).otherId, jane);
+  // A later Instagram import matches her instead of adding a new person.
+  const follower = (u: string) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] });
+  await ingest(db, 'instagram', parseInstagram([follower('jane.doe')]));
+  assert.equal((await listPeople(db)).length, 2);
+});

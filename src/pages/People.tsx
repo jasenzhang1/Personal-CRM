@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SourceBadge, TagChip } from '@/components/ui';
+import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SourceBadge, TagChip, instagramUrl } from '@/components/ui';
 import { allTags, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
@@ -180,7 +180,7 @@ export function People() {
                   <ScoreBadge score={r.score} rank={sort === 'score' && r.score > 0 ? i + 1 : undefined} title={r.why} guess={r.guess} />
                 </span>
                 <span className="pt-sources badges" role="cell">
-                  {r.sources.map((s) => <SourceBadge key={s} source={s} />)}
+                  {r.sources.map((s) => <SourceBadge key={s} source={s} href={s === 'instagram' && r.ig_handle ? instagramUrl(r.ig_handle) : undefined} />)}
                 </span>
               </div>
             );

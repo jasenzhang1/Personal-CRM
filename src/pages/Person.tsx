@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Avatar, Chips, Closeness, Modal, ScoreBadge, SourceBadge, TagInput } from '@/components/ui';
+import { Avatar, Chips, Closeness, Modal, ScoreBadge, SourceBadge, TagInput, instagramUrl } from '@/components/ui';
 import { mergePeople } from '@/db/merge';
 import { MergeForm } from './Duplicates';
 import {
@@ -13,6 +13,7 @@ import {
   getPerson,
   getSources,
   getStageEvents,
+  addInstagramAccount,
   listPeople,
   setStage,
   updatePerson,
@@ -213,7 +214,10 @@ export function PersonPage() {
 
   const sourceKinds = [...new Set(sources.map((s) => s.source))];
   const guess = inferCircle(sourceKinds, !!stage);
-  const igHandle = sources.find((s) => s.source === 'instagram')?.handle?.replace(/^@/, '');
+  // Chat-only Instagram links have no username, so look for one that does.
+  const igHandles = [...new Set(sources.filter((s) => s.source === 'instagram' && s.handle).map((s) => s.handle!.replace(/^@/, '')))];
+  const igHandle = igHandles[0];
+  const fromIgChatsOnly = !igHandle && sources.some((s) => s.source === 'instagram');
 
   if (missing) return <div className="page"><p className="empty">This person no longer exists. <Link to="/people">Back to People</Link></p></div>;
 
@@ -265,16 +269,29 @@ export function PersonPage() {
           <input className="name-input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Name" aria-label="Name" autoFocus={isNew} />
           <div className="badges">
             {[...new Set(sources.map((s) => s.source))].map((s) => <SourceBadge key={s} source={s} />)}
-            {sources.filter((s) => s.handle).map((s) =>
-              s.source === 'instagram' ? (
-                <a key={`h${s.id}`} href={`https://www.instagram.com/${s.handle!.replace(/^@/, '')}/`} target="_blank" rel="noreferrer" className="small">{s.handle}</a>
-              ) : s.handle!.startsWith('http') ? (
+            {sources.filter((s) => s.handle && s.source !== 'instagram').map((s) =>
+              s.handle!.startsWith('http') ? (
                 <a key={`h${s.id}`} href={s.handle!} target="_blank" rel="noreferrer" className="small">{s.handle!.replace(/^https?:\/\/(www\.)?/, '')}</a>
               ) : (
                 <span key={`h${s.id}`} className="small muted">{s.handle}</span>
               ),
             )}
           </div>
+          {id !== null && (
+            <div className="ig-links">
+              {igHandles.map((h) => (
+                <a key={h} className="ig-link" href={instagramUrl(h)} target="_blank" rel="noreferrer">
+                  <span aria-hidden>📸</span> @{h} <span aria-hidden>↗</span>
+                </a>
+              ))}
+              <AddInstagram
+                personId={id}
+                compact={igHandles.length > 0}
+                hint={fromIgChatsOnly ? 'They came from your Instagram chats, which don’t include usernames.' : undefined}
+                onAdded={async () => setSources(await getSources(db, id))}
+              />
+            </div>
+          )}
         </div>
       </header>
       {inQueue && <p className="notice">New connection! Jot down how you met while it's fresh.</p>}
@@ -598,5 +615,58 @@ function MergeDialog({ open, person, onClose, onMerge }: { open: boolean; person
         </div>
       )}
     </Modal>
+  );
+}
+
+/** "+ Add Instagram": paste a profile link or type a username to make their profile one tap away. */
+function AddInstagram({ personId, compact, hint, onAdded }: { personId: number; compact: boolean; hint?: string; onAdded: () => void }) {
+  const { db, bump } = useStore();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    const r = await addInstagramAccount(db, personId, value);
+    if (!r.ok) return setError(r.error);
+    setOpen(false);
+    setValue('');
+    setError(null);
+    onAdded();
+    bump();
+  };
+  if (!open)
+    return (
+      <span className="ig-add">
+        <button type="button" className="link-btn small" onClick={() => setOpen(true)}>
+          {compact ? '+ another Instagram' : '+ Add their Instagram'}
+        </button>
+        {hint && <span className="small muted"> {hint}</span>}
+      </span>
+    );
+  // Not a <form>: this sits inside the page's edit form.
+  return (
+    <span className="ig-add-form">
+      <input
+        className="input"
+        autoFocus
+        placeholder="jane.doe or instagram.com/jane.doe"
+        aria-label="Their Instagram username or profile link"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            save();
+          }
+          if (e.key === 'Escape') setOpen(false);
+        }}
+      />
+      <button type="button" className="btn secondary small" onClick={save} disabled={!value.trim()}>
+        Add
+      </button>
+      <button type="button" className="btn ghost small" onClick={() => { setOpen(false); setError(null); }}>
+        Cancel
+      </button>
+      {error && <span className="small err-text" role="alert">{error}</span>}
+    </span>
   );
 }

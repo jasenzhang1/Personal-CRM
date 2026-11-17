@@ -473,3 +473,17 @@ code.copy { cursor: copy; }
   .dup-pair { grid-template-columns: 1fr; }
   .dup-and { justify-self: center; }
 }
+
+/* ---------- Instagram links ---------- */
+a.source-badge.link { text-decoration: none; cursor: pointer; }
+a.source-badge.link:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.ig-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
+.ig-link {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid #e1306c; color: #c13584; font-weight: 600; font-size: 14px; text-decoration: none;
+  background: color-mix(in srgb, #e1306c 6%, var(--surface)); max-width: 100%; overflow-wrap: anywhere;
+}
+.ig-link:hover { background: color-mix(in srgb, #e1306c 14%, var(--surface)); }
+.ig-add-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
+.ig-add-form .input { flex: 1 1 220px; min-width: 0; }
+.err-text { color: var(--danger, #d83a52); flex-basis: 100%; }

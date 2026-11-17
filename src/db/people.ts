@@ -63,6 +63,8 @@ const now = () => new Date().toISOString();
 export interface PersonListRow extends Person {
   sources: string[];
   tags: string[];
+  /** Their Instagram username without "@", when we know it. */
+  ig_handle: string | null;
 }
 
 const TAG_SEP = '\u001f';
@@ -88,16 +90,18 @@ export async function listPeople(
     where.push('EXISTS (SELECT 1 FROM person_tags t WHERE t.person_id = p.id AND t.tag = ?)');
     params.push(opts.tag);
   }
-  const rows = await db.getAllAsync<Person & { source_list: string | null; tag_list: string | null }>(
+  const rows = await db.getAllAsync<Person & { source_list: string | null; tag_list: string | null; ig_raw: string | null }>(
     `SELECT p.*,
             (SELECT GROUP_CONCAT(DISTINCT s.source) FROM sources s WHERE s.person_id = p.id) AS source_list,
-            (SELECT GROUP_CONCAT(t.tag, '${TAG_SEP}') FROM person_tags t WHERE t.person_id = p.id) AS tag_list
+            (SELECT GROUP_CONCAT(t.tag, '${TAG_SEP}') FROM person_tags t WHERE t.person_id = p.id) AS tag_list,
+            (SELECT s.handle FROM sources s WHERE s.person_id = p.id AND s.source = 'instagram' AND s.handle IS NOT NULL ORDER BY s.first_seen LIMIT 1) AS ig_raw
      FROM people p ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY p.name COLLATE NOCASE`,
     params,
   );
-  return rows.map(({ source_list, tag_list, ...p }) => ({
+  return rows.map(({ source_list, tag_list, ig_raw, ...p }) => ({
     ...p,
+    ig_handle: ig_raw ? ig_raw.replace(/^@/, '') : null,
     sources: source_list ? source_list.split(',') : [],
     tags: tag_list ? tag_list.split(TAG_SEP).sort((a, b) => a.localeCompare(b)) : [],
   }));
@@ -206,4 +210,35 @@ export async function getSetting(db: SQLiteDatabase, key: string) {
 export async function setSetting(db: SQLiteDatabase, key: string, value: string | null) {
   if (value === null) await db.runAsync('DELETE FROM settings WHERE key = ?', key);
   else await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', key, value);
+}
+
+/** "@jane.doe", "jane.doe" or "https://www.instagram.com/jane.doe/?hl=en" → "jane.doe" (or null if it isn't a valid username). */
+export function parseInstagramUsername(input: string): string | null {
+  const s = input.trim().replace(/^(https?:\/\/)?(www\.|m\.)?instagram\.com\/(_u\/)?/i, '').replace(/[/?#].*$/, '').replace(/^@/, '');
+  return /^[A-Za-z0-9._]{1,30}$/.test(s) ? s : null;
+}
+
+/**
+ * Link an Instagram account to someone by hand (for people who only came from your chats, which
+ * don't include usernames). Future Instagram imports of that account then match this person.
+ */
+export async function addInstagramAccount(
+  db: SQLiteDatabase,
+  personId: number,
+  input: string,
+): Promise<{ ok: true; username: string } | { ok: false; error: string; otherId?: number }> {
+  const username = parseInstagramUsername(input);
+  if (!username) return { ok: false, error: 'That doesn’t look like an Instagram username. Paste their profile link or type it like jane.doe' };
+  const existing = await db.getFirstAsync<{ person_id: number; name: string }>(
+    "SELECT s.person_id, p.name FROM sources s JOIN people p ON p.id = s.person_id WHERE s.source = 'instagram' AND s.external_id = ?",
+    username.toLowerCase(),
+  );
+  if (existing && existing.person_id !== personId)
+    return { ok: false, error: `@${username} is already on ${existing.name}. If that's the same person, use “Merge with someone…” below.`, otherId: existing.person_id };
+  if (!existing)
+    await db.runAsync(
+      "INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'instagram', ?, ?, ?)",
+      personId, username.toLowerCase(), '@' + username, new Date().toISOString(),
+    );
+  return { ok: true, username };
 }

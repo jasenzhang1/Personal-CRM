@@ -172,14 +172,23 @@ const SOURCE_STYLE: Record<string, [string, string]> = {
   facebook: ['Facebook', '#1877f2'],
 };
 
-export function SourceBadge({ source }: { source: string }) {
+/** "Instagram", "Contacts"…; pass `href` to make it open their profile in a new tab. */
+export function SourceBadge({ source, href }: { source: string; href?: string }) {
   const [label, color] = SOURCE_STYLE[source] ?? [source, 'var(--muted)'];
+  if (href)
+    return (
+      <a className="source-badge link" style={{ color, borderColor: color }} href={href} target="_blank" rel="noreferrer" title="Open their profile" onClick={(e) => e.stopPropagation()}>
+        {label} ↗
+      </a>
+    );
   return (
     <span className="source-badge" style={{ color, borderColor: color }}>
       {label}
     </span>
   );
 }
+
+export const instagramUrl = (username: string) => `https://www.instagram.com/${username.replace(/^@/, '')}/`;
 
 export function PersonRow({ person, subtitle, right, queue }: { person: Person; subtitle?: ReactNode; right?: ReactNode; queue?: string }) {
   const sub = subtitle ?? ([person.how_met, person.company].filter(Boolean).join(' · ') || person.phone || person.email || '');
