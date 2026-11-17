@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { Link } from 'react-router';
+import { applyNameSuggestions, AUTO_NAMES_KEY, nameReviewList } from '@/db/names';
 import { PageHead, SourceBadge } from '@/components/ui';
 import { getSetting, setSetting } from '@/db/people';
 import { SOURCE_LABELS } from '@/lib/constants';
@@ -83,7 +85,7 @@ const FILE_SOURCES: FileSource[] = [
 
 const REFRESH_AFTER_DAYS = 60;
 
-type Log = { ok: boolean; text: string };
+type Log = { ok: boolean; text: string; link?: { to: string; label: string } };
 
 const describe = (r: IngestResult) =>
   `${SOURCE_LABELS[r.source]}: ${r.total} found · ${r.added} new${r.added ? (r.baseline ? ' → Older connections' : ' → Inbox') : ''} · ${r.linked} matched to people you already had`;
@@ -114,6 +116,16 @@ export function Sync() {
 
   const addLog = (entries: Log[]) => setLog((l) => [...entries, ...l]);
 
+  /** After an import: apply sure-thing name fixes (unless turned off) and point to the rest. */
+  const cleanNames = async (): Promise<Log[]> => {
+    const auto = (await getSetting(db, AUTO_NAMES_KEY)) !== '0';
+    const { fixed, left } = auto ? await applyNameSuggestions(db) : { fixed: 0, left: (await nameReviewList(db)).length };
+    const out: Log[] = [];
+    if (fixed) out.push({ ok: true, text: `Cleaned up ${fixed.toLocaleString()} ${fixed === 1 ? 'name' : 'names'} (e.g. usernames → First Last).` });
+    if (left) out.push({ ok: true, text: `${left.toLocaleString()} ${left === 1 ? 'name still needs' : 'names still need'} a look.`, link: { to: '/names', label: 'Clean up names →' } });
+    return out;
+  };
+
   const importFiles = async (files: File[]) => {
     setBusy('files');
     try {
@@ -126,6 +138,7 @@ export function Sync() {
       // Chats last, so they can match people this same import just added.
       if (chatEntries.length) for (const r of await importChats(db, parseChats(chatEntries))) out.push({ ok: true, text: describeChats(r) });
       if (!out.length) out.push({ ok: false, text: 'Nothing to import in those files.' });
+      else if (out.some((l) => l.ok)) out.push(...(await cleanNames()));
       addLog(out);
     } catch (e) {
       addLog([{ ok: false, text: e instanceof Error ? e.message : String(e) }]);
@@ -139,7 +152,7 @@ export function Sync() {
     if (!status?.googleClientId) return;
     setBusy('google');
     try {
-      addLog([{ ok: true, text: describe(await ingest(db, 'google', await fetchGoogleContacts(status.googleClientId))) }]);
+      addLog([{ ok: true, text: describe(await ingest(db, 'google', await fetchGoogleContacts(status.googleClientId))) }, ...(await cleanNames())]);
     } catch (e) {
       addLog([{ ok: false, text: e instanceof Error ? e.message : String(e) }]);
     } finally {
@@ -151,7 +164,7 @@ export function Sync() {
   const pickContacts = async () => {
     try {
       const picked = await navigator.contacts!.select(['name', 'tel', 'email'], { multiple: true });
-      if (picked.length) addLog([{ ok: true, text: describe(await ingest(db, 'phone', fromContactPicker(picked))) }]);
+      if (picked.length) addLog([{ ok: true, text: describe(await ingest(db, 'phone', fromContactPicker(picked))) }, ...(await cleanNames())]);
       bump();
     } catch (e) {
       addLog([{ ok: false, text: String(e) }]);
@@ -243,6 +256,12 @@ export function Sync() {
             <li key={i} className={l.ok ? 'ok' : 'err'}>
               {l.ok ? '✓ ' : '⚠ '}
               {l.text}
+              {l.link && (
+                <>
+                  {' '}
+                  <Link to={l.link.to}>{l.link.label}</Link>
+                </>
+              )}
             </li>
           ))}
         </ul>

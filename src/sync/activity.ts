@@ -68,8 +68,9 @@ export async function importChats(db: SQLiteDatabase, threads: ThreadActivity[])
       // Remember the link so the next import of a newer export matches instantly.
       if (th.source !== 'discord') {
         await db.runAsync(
-          'INSERT OR IGNORE INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, ?, ?, NULL, ?)',
-          personId, th.source, chatKey, t,
+          `INSERT INTO sources (person_id, source, external_id, handle, display_name, first_seen) VALUES (?, ?, ?, NULL, ?, ?)
+           ON CONFLICT (source, external_id) DO UPDATE SET display_name = excluded.display_name`,
+          personId, th.source, chatKey, th.otherName ?? null, t,
         );
         bySource.set(`${th.source}:${chatKey}`, personId);
       }

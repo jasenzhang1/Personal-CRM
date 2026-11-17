@@ -23,6 +23,7 @@ import { CIRCLES, circleInfo, CLOSENESS_LABELS, FOLLOW_UPS, PRIORITIES, STAGES, 
 import { formatBirthday, formatDate, isoDate, isValidBirthday } from '@/lib/dates';
 import { shrinkImage } from '@/lib/image';
 import { inferCircle } from '@/lib/relationship';
+import { keepName } from '@/db/names';
 import { activitySummary, loadScores, logInteraction, removeRanking, setPlacement } from '@/db/ranking';
 import { describeScoreInfo, type ScoreInfo } from '@/lib/ranking';
 import { useQuery, useStore } from '@/lib/store';
@@ -144,6 +145,8 @@ export function PersonPage() {
     } else {
       await updatePerson(db, savedId, patch);
     }
+    // A name you typed yourself is final: name cleanup won't suggest changing it.
+    if (isNew || (person && patch.name !== person.name)) await keepName(db, savedId);
     await setTags(db, savedId, form.tags);
     bump();
     if (andNext && queue) return goNext(savedId);

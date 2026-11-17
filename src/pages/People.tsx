@@ -6,6 +6,7 @@ import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants
 import { describeScoreInfo } from '@/lib/ranking';
 import { inferCircle } from '@/lib/relationship';
 import { loadScores } from '@/db/ranking';
+import { nameReviewList } from '@/db/names';
 import { useQuery, useStore } from '@/lib/store';
 
 type Filter = 'all' | 'reviewed' | 'todo' | 'archived';
@@ -37,6 +38,7 @@ export function People() {
     return { list, scores: await loadScores(db, list) };
   }, [filter, search, tag]);
   const tags = useQuery(() => allTags(db), []);
+  const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
 
   const rows = useMemo(() => {
     if (!people) return null;
@@ -69,6 +71,11 @@ export function People() {
   return (
     <div className="page page-wide">
       <PageHead title="People" sub={rows ? `${rows.length.toLocaleString()} ${rows.length === 1 ? 'person' : 'people'}` : undefined}>
+        {needNames > 0 && (
+          <Link className="btn secondary" to="/names" title="Turn usernames into First Last">
+            ✨ Clean up {needNames.toLocaleString()} {needNames === 1 ? 'name' : 'names'}
+          </Link>
+        )}
         <Link className="btn secondary" to="/rank">
           🏆 Rank friends
         </Link>

@@ -39,6 +39,14 @@ Drop whole `.zip` exports as-is; only the contact lists inside are read. Instagr
 
 The **first** import from each source files everyone under **Older connections**. Later imports put only newly added people in the **Inbox**. The same person from several sources is merged by email, phone number, or an unambiguous name match. Imports only fill in blank fields and never overwrite what you wrote.
 
+## Cleaning up names
+
+Instagram only exports usernames, so after an import some people are named like `john.smith_99` or `jackiezhang26`. **Clean up names** (button on People, or the link after an import) suggests a proper "First Last" for each one. Suggestions come from the name they use in your chats, from fixing capitals ("JOHN SMITH"), and from splitting the username using common first and last names.
+
+- **Sure fixes** (a chat name, or a known first + last name like `eileen_chen7` → Eileen Chen) are applied automatically after every import. You can turn this off on the page.
+- **Guesses** (`zongyundeng` → Zongyun Deng) wait for you: edit, **Save**, **Keep as is**, or **Apply all**.
+- Names you type yourself, on that page or on someone's own page, are never changed again.
+
 ## Ranking and closeness scores
 
 Every person has one **0–10 closeness score**, and every list sorts by it. There are no fixed buckets like "inner circle": friendships change, so scores do too.
