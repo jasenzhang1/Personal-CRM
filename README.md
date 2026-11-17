@@ -20,6 +20,8 @@ npm run dev        # http://localhost:5173 — the terminal also prints a Networ
 
 `npm run build` writes a static site to `dist/`. You can host it on any static host (GitHub Pages, Netlify, Vercel, Cloudflare Pages) with no server or rewrites needed.
 
+**Live site:** https://jasenzhang1.github.io/Personal-CRM/. Every push to `main` rebuilds it (see `.github/workflows/deploy.yml`). The site holds only code. Your contacts stay in whichever browser you use it in.
+
 ## Importing contacts
 
 The **Import & settings** page has a button for each source that opens the right export page, plus step-by-step instructions.
