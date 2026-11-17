@@ -206,11 +206,10 @@ const SOURCE_GLYPH: Record<string, ReactNode> = {
     <path d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3zM12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22zm-5.6-8a6 6 0 0 1 0-3.9V7.5H3.1a10 10 0 0 0 0 9zM12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.5l3.3 2.6C7.2 7.7 9.4 5.9 12 5.9z" fill="currentColor" />
   ),
   phone: (
-    <>
-      <rect x="2" y="2" width="20" height="20" rx="5" fill="currentColor" />
-      <circle cx="12" cy="9.3" r="3.3" fill="#fff" />
-      <path d="M5.8 18.6c.9-2.8 3.3-4.3 6.2-4.3s5.3 1.5 6.2 4.3z" fill="#fff" />
-    </>
+    <path
+      d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"
+      fill="currentColor"
+    />
   ),
 };
 
@@ -218,7 +217,10 @@ const SOURCE_GLYPH: Record<string, ReactNode> = {
  * A source as its brand icon: in color and clickable when we have a link to their profile there,
  * gray when that source only gave us a name (e.g. Facebook friends).
  */
-export function SourceIcon({ source, href, size = 18 }: { source: string; href?: string | null; size?: number }) {
+/** The order icons appear in, so each source always sits in the same column. */
+export const SOURCE_ORDER = ['phone', 'instagram', 'linkedin', 'facebook', 'discord', 'google'];
+
+export function SourceIcon({ source, href, size = 18, missing }: { source: string; href?: string | null; size?: number; missing?: boolean }) {
   const [label, color] = SOURCE_STYLE[source] ?? [source, 'var(--muted)'];
   const glyph = SOURCE_GLYPH[source];
   const icon = glyph ? (
@@ -242,7 +244,12 @@ export function SourceIcon({ source, href, size = 18 }: { source: string; href?:
       </a>
     );
   return (
-    <span className="source-icon off" title={`${label} (no profile link)`} aria-label={label} role="img">
+    <span
+      className={`source-icon off${missing ? ' missing' : ''}`}
+      title={missing ? `Not on their ${label}` : `${label} (no profile link)`}
+      aria-label={missing ? `${label}: not connected` : label}
+      role="img"
+    >
       {icon}
     </span>
   );

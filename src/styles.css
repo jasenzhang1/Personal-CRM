@@ -525,3 +525,8 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
 .help summary { cursor: pointer; font-weight: 600; color: var(--primary); }
 .help[open] summary { margin-bottom: 8px; }
 .help-item + .help-item { margin-top: 8px; }
+
+/* Source icons in a fixed grid: colored = link, gray = there but no link, faint = not connected there */
+.source-grid { gap: 2px; align-items: center; justify-content: start; }
+@media (min-width: 860px) { .pt-sources.source-grid { display: grid; } }
+.source-icon.off.missing { opacity: 0.2; }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SourceIcon, TagChip } from '@/components/ui';
+import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
@@ -44,6 +44,11 @@ export function People() {
   }, [filter, search, tag]);
   const tags = useQuery(() => allTags(db), []);
   const cities = useQuery(() => allCities(db), []);
+  // One column per source you've imported from, in a fixed order, so icons line up row to row.
+  const sourceCols = useQuery(async () => {
+    const used = new Set((await db.getAllAsync<{ source: string }>('SELECT DISTINCT source FROM sources')).map((r) => r.source));
+    return [...SOURCE_ORDER.filter((s) => used.has(s)), ...[...used].filter((s) => !SOURCE_ORDER.includes(s))];
+  }, []) ?? [];
   const [city, setCityFilter] = useState('');
   const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
   const dupes = useQuery(async () => (await listDuplicates(db)).filter((p) => p.strong).length, []) ?? 0;
@@ -276,8 +281,10 @@ export function People() {
                 <span className="pt-score" role="cell">
                   <ScoreBadge score={r.score} rank={sort === 'score' && r.score > 0 ? i + 1 : undefined} title={r.why} guess={r.guess} />
                 </span>
-                <span className="pt-sources badges" role="cell">
-                  {r.sources.map((s) => <SourceIcon key={s} source={s} href={r.links[s]} />)}
+                <span className="pt-sources source-grid" role="cell" style={{ gridTemplateColumns: `repeat(${Math.max(sourceCols.length, 1)}, 26px)` }}>
+                  {sourceCols.map((s) => (
+                    <SourceIcon key={s} source={s} href={r.links[s]} missing={!r.sources.includes(s)} />
+                  ))}
                 </span>
               </div>
             );
