@@ -32,7 +32,7 @@ The **Import & settings** page has a button for each source that opens the right
 | iPhone | icloud.com/contacts → select all → Export vCard → drop the `.vcf` |
 | LinkedIn | Request the "larger data archive" (it includes Connections) → drop the `.zip` |
 | Instagram | Download your information → Followers and following, JSON → drop the `.zip` |
-| Facebook | Download your information → Friends, JSON → drop the `.zip` |
+| Facebook | Download your information → Friends (JSON or HTML) → drop the `.zip`. Tick Personal information too to bring in the phone contacts you once uploaded to Facebook. |
 | Discord | Settings → Data & Privacy → Request all of my data → drop `package.zip` |
 
 Drop whole `.zip` exports as-is; only the contact lists inside are read. Instagram, Facebook, LinkedIn and Discord don't let outside apps read friend lists, so for them the export file is the only way in.
@@ -72,6 +72,15 @@ Archive people who aren't really people (clubs, shops, brands) or who don't matt
 - the Followers page
 
 Find them again under the **Archived** filter, where you can **Unarchive**.
+
+## Birthdays and cities
+
+- **🎂 Birthdays** (from Reminders) shows the next 30 days, everyone by month with the age they're turning, and a quick way to add birthdays for your closest people. **📅 Add to my calendar** downloads a calendar file of every birthday, repeating yearly with reminders the day before and that morning. Open it on your iPhone and tap *Add all*. A website can't send notifications by itself, but your calendar can.
+- **City** on each profile, filled automatically from phone and Google contact addresses. People can be filtered by city and shows it under each name. **☑ Select** → **📍 Set city** sets it for many people at once.
+
+## Profile links and pictures
+
+The People list shows each source as its icon. It's in color and clickable when there's a link to their profile (Instagram, LinkedIn, Discord, Google Contacts, or tap to call), and gray when that source only gave a name (Facebook friends, for example). Exports don't include other people's profile pictures, and Instagram blocks websites from loading them. To add one, open their Instagram (or LinkedIn), right-click the picture → *Copy image*, and press Ctrl+V on their page. You can also drag the picture in.
 
 ## Ranking and closeness scores
 

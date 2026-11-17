@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Chips, Empty, PageHead, PersonRow, SourceBadge } from '@/components/ui';
+import { Chips, Empty, PageHead, PersonRow, SourceIcon } from '@/components/ui';
 import { listPeople, updatePerson, type Person } from '@/db/people';
 import { useQuery, useStore } from '@/lib/store';
 
@@ -54,7 +54,7 @@ export function Inbox() {
               subtitle={p.company ?? p.phone ?? p.email ?? undefined}
               right={
                 <>
-                  <span className="badges">{(sources?.get(p.id) ?? []).map((s) => <SourceBadge key={s} source={s} />)}</span>
+                  <span className="badges">{(sources?.get(p.id) ?? []).map((s) => <SourceIcon key={s} source={s} />)}</span>
                   <button className="btn ghost small" onClick={() => skip(p)} title="Hide — not someone to track">
                     Skip
                   </button>

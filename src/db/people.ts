@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from './types';
+import { sourceLinks } from '@/lib/sourceLinks';
 import type { Circle, Stage } from '@/lib/constants';
 
 export type PersonStatus = 'new' | 'backlog' | 'reviewed' | 'archived';
@@ -26,6 +27,7 @@ export interface Person {
   next_step_on: string | null;
   /** What you set; null means "guess from where they came from" (see inferCircle). */
   circle: Circle | null;
+  city: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -52,7 +54,7 @@ export interface StageEvent {
 export const EDITABLE_FIELDS = [
   'name', 'phone', 'email', 'birthday', 'company', 'title', 'how_met', 'met_on', 'notes',
   'closeness', 'follow_up', 'last_contacted', 'status', 'priority', 'deal_value', 'next_step', 'next_step_on',
-  'circle', 'photo',
+  'circle', 'photo', 'city',
 ] as const;
 export type EditableField = (typeof EDITABLE_FIELDS)[number];
 export type PersonPatch = Partial<Pick<Person, EditableField>>;
@@ -65,6 +67,8 @@ export interface PersonListRow extends Person {
   tags: string[];
   /** Their Instagram username without "@", when we know it. */
   ig_handle: string | null;
+  /** Profile link per source ("linkedin" → their LinkedIn URL); null when the export had none. */
+  links: Record<string, string | null>;
 }
 
 const TAG_SEP = '\u001f';
@@ -81,26 +85,34 @@ export async function listPeople(
   }
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
-    where.push(`(p.name LIKE ? OR p.company LIKE ? OR p.how_met LIKE ? OR p.notes LIKE ?
+    where.push(`(p.name LIKE ? OR p.company LIKE ? OR p.city LIKE ? OR p.how_met LIKE ? OR p.notes LIKE ?
                  OR EXISTS (SELECT 1 FROM person_tags t WHERE t.person_id = p.id AND t.tag LIKE ?)
                  OR EXISTS (SELECT 1 FROM sources s WHERE s.person_id = p.id AND s.handle LIKE ?))`);
-    params.push(q, q, q, q, q, q);
+    params.push(q, q, q, q, q, q, q);
   }
   if (opts.tag) {
     where.push('EXISTS (SELECT 1 FROM person_tags t WHERE t.person_id = p.id AND t.tag = ?)');
     params.push(opts.tag);
   }
-  const rows = await db.getAllAsync<Person & { source_list: string | null; tag_list: string | null; ig_raw: string | null }>(
+  const rows = await db.getAllAsync<Person & { source_list: string | null; tag_list: string | null; ig_raw: string | null; src_raw: string | null }>(
     `SELECT p.*,
             (SELECT GROUP_CONCAT(DISTINCT s.source) FROM sources s WHERE s.person_id = p.id) AS source_list,
+            (SELECT GROUP_CONCAT(s.source || char(30) || s.external_id || char(30) || COALESCE(s.handle, ''), char(31)) FROM sources s WHERE s.person_id = p.id) AS src_raw,
             (SELECT GROUP_CONCAT(t.tag, '${TAG_SEP}') FROM person_tags t WHERE t.person_id = p.id) AS tag_list,
             (SELECT s.handle FROM sources s WHERE s.person_id = p.id AND s.source = 'instagram' AND s.handle IS NOT NULL ORDER BY s.first_seen LIMIT 1) AS ig_raw
      FROM people p ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY p.name COLLATE NOCASE`,
     params,
   );
-  return rows.map(({ source_list, tag_list, ig_raw, ...p }) => ({
+  return rows.map(({ source_list, tag_list, ig_raw, src_raw, ...p }) => ({
     ...p,
+    links: sourceLinks(
+      (src_raw ? src_raw.split('\u001f') : []).map((x) => {
+        const [source, external_id, handle] = x.split('\u001e');
+        return { source, external_id, handle: handle || null };
+      }),
+      p.phone,
+    ),
     ig_handle: ig_raw ? ig_raw.replace(/^@/, '') : null,
     sources: source_list ? source_list.split(',') : [],
     tags: tag_list ? tag_list.split(TAG_SEP).sort((a, b) => a.localeCompare(b)) : [],
@@ -124,6 +136,21 @@ export async function setTags(db: SQLiteDatabase, personId: number, tags: string
 }
 
 /** Every tag in use, most-used first, spelled the way it was first typed. */
+/** Cities in use, most common first (for suggestions and the People filter). */
+export function allCities(db: SQLiteDatabase) {
+  return db.getAllAsync<{ city: string; n: number }>(
+    "SELECT MIN(city) AS city, COUNT(*) AS n FROM people WHERE city IS NOT NULL AND city != '' AND status != 'archived' GROUP BY city COLLATE NOCASE ORDER BY n DESC, city COLLATE NOCASE",
+  );
+}
+
+/** Set the same city for many people at once (blank clears it). */
+export async function setCity(db: SQLiteDatabase, ids: number[], city: string) {
+  const t = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    for (const id of ids) await db.runAsync('UPDATE people SET city = ?, updated_at = ? WHERE id = ?', city.trim() || null, t, id);
+  });
+}
+
 export function allTags(db: SQLiteDatabase) {
   return db.getAllAsync<{ tag: string; n: number }>(
     'SELECT MIN(tag) AS tag, COUNT(*) AS n FROM person_tags GROUP BY tag ORDER BY n DESC, tag COLLATE NOCASE',

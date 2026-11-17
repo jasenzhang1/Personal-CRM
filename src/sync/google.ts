@@ -85,7 +85,7 @@ export async function fetchGoogleContacts(clientId: string): Promise<Candidate[]
   const token = await getToken(clientId.trim());
   const [saved, other] = await Promise.all([
     fetchAll(
-      'https://people.googleapis.com/v1/people/me/connections?pageSize=1000&personFields=names,emailAddresses,phoneNumbers,birthdays,organizations,photos',
+      'https://people.googleapis.com/v1/people/me/connections?pageSize=1000&personFields=names,emailAddresses,phoneNumbers,birthdays,organizations,photos,addresses',
       'connections',
       token,
     ),

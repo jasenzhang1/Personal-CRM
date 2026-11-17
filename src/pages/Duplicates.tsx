@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { Avatar, Empty, PageHead, Pager, SourceBadge, TagChip } from '@/components/ui';
+import { Avatar, Empty, PageHead, Pager, SourceIcon, TagChip } from '@/components/ui';
 import { dismissDuplicate, listDuplicates, mergeAllLikely, mergePeople, richness } from '@/db/merge';
 import { getPerson, listPeople, type Person, type PersonListRow } from '@/db/people';
 import { DUP_REASONS, nameOptions, type DupPair } from '@/lib/duplicates';
@@ -215,7 +215,7 @@ function PersonMini({ p }: { p: PersonListRow }) {
         <span className="person-sub">{details || `Added ${formatDate(p.created_at.slice(0, 10))}`}</span>
         <span className="badges">
           {p.sources.map((s) => (
-            <SourceBadge key={s} source={s} />
+            <SourceIcon key={s} source={s} href={p.links[s]} />
           ))}
           {p.tags.slice(0, 3).map((t) => (
             <TagChip key={t} tag={t} />

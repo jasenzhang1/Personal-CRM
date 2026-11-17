@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SourceBadge, TagChip, instagramUrl } from '@/components/ui';
+import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, ScoreBadge, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
@@ -8,7 +8,7 @@ import { inferCircle } from '@/lib/relationship';
 import { loadScores } from '@/db/ranking';
 import { nameReviewList } from '@/db/names';
 import { listDuplicates } from '@/db/merge';
-import { setArchived } from '@/db/people';
+import { allCities, setArchived, setCity } from '@/db/people';
 import { looksLikeOrganization } from '@/lib/orgs';
 import { useQuery, useStore } from '@/lib/store';
 
@@ -43,6 +43,8 @@ export function People() {
     return { list, scores: await loadScores(db, list) };
   }, [filter, search, tag]);
   const tags = useQuery(() => allTags(db), []);
+  const cities = useQuery(() => allCities(db), []);
+  const [city, setCityFilter] = useState('');
   const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
   const dupes = useQuery(async () => (await listDuplicates(db)).filter((p) => p.strong).length, []) ?? 0;
 
@@ -59,10 +61,22 @@ export function People() {
         : circle === 'org'
           ? out.filter((r) => looksLikeOrganization(r.name, r.ig_handle ? [r.ig_handle] : []))
           : out.filter((r) => (circle === 'unset' ? !r.circleShown : r.circleShown === circle || r.circleShown === 'both'));
+    if (city) {
+      const c = city.toLowerCase();
+      for (let i = filtered.length - 1; i >= 0; i--) if ((filtered[i].city ?? '').toLowerCase() !== (c === '__none' ? '' : c)) filtered.splice(i, 1);
+    }
     if (sort === 'score') filtered.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
     if (sort === 'recent') filtered.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return filtered;
-  }, [people, circle, sort]);
+  }, [people, circle, sort, city]);
+
+  const bulkCity = async () => {
+    const c = prompt(`City for ${selected.size.toLocaleString()} ${selected.size === 1 ? 'person' : 'people'} (e.g. Los Angeles, CA). Leave blank to clear.`, city && city !== '__none' ? city : '');
+    if (c === null) return;
+    await setCity(db, [...selected], c);
+    setSelected(new Set());
+    bump();
+  };
 
   const bulkArchive = async (archive: boolean) => {
     const n = selected.size;
@@ -150,6 +164,15 @@ export function People() {
                 </option>
               ))}
             </select>
+            <select className="input" value={city} onChange={(e) => resetPaging(setCityFilter)(e.target.value)} aria-label="City">
+              <option value="">All cities</option>
+              {cities?.map((c) => (
+                <option key={c.city} value={c.city}>
+                  {c.city} ({c.n})
+                </option>
+              ))}
+              <option value="__none">City not set</option>
+            </select>
             <select className="input" value={sort} onChange={(e) => resetPaging(setSort)(e.target.value as Sort)} aria-label="Sort">
               <option value="score">Closest first</option>
               <option value="name">Name A–Z</option>
@@ -174,6 +197,9 @@ export function People() {
             </button>
           )}
           <span className="grow" />
+          <button type="button" className="btn secondary small" disabled={!selected.size} onClick={bulkCity}>
+            📍 Set city
+          </button>
           {filter === 'archived' ? (
             <button type="button" className="btn primary small" disabled={!selected.size} onClick={() => bulkArchive(false)}>
               Unarchive {selected.size || ''}
@@ -217,7 +243,7 @@ export function People() {
                     <Avatar name={r.name} photo={r.photo} size={36} />
                     <span className="person-text">
                       <span className="person-name">{r.name}</span>
-                      <span className="person-sub">{[r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
+                      <span className="person-sub">{[r.city && `📍 ${r.city}`, r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
                     </span>
                   </label>
                 ) : (
@@ -225,7 +251,7 @@ export function People() {
                     <Avatar name={r.name} photo={r.photo} size={36} />
                     <span className="person-text">
                       <span className="person-name">{r.name}</span>
-                      <span className="person-sub">{[r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
+                      <span className="person-sub">{[r.city && `📍 ${r.city}`, r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
                     </span>
                   </Link>
                 )}
@@ -251,7 +277,7 @@ export function People() {
                   <ScoreBadge score={r.score} rank={sort === 'score' && r.score > 0 ? i + 1 : undefined} title={r.why} guess={r.guess} />
                 </span>
                 <span className="pt-sources badges" role="cell">
-                  {r.sources.map((s) => <SourceBadge key={s} source={s} href={s === 'instagram' && r.ig_handle ? instagramUrl(r.ig_handle) : undefined} />)}
+                  {r.sources.map((s) => <SourceIcon key={s} source={s} href={r.links[s]} />)}
                 </span>
               </div>
             );
@@ -259,7 +285,7 @@ export function People() {
         </div>
       )}
       {rows && <Pager page={pg} pageSize={PAGE} count={rows.length} onChange={setPage} />}
-      {rows && rows.length === 0 && <Empty>{search || tag || circle !== 'any' ? 'No matches.' : 'No one here yet.'}</Empty>}
+      {rows && rows.length === 0 && <Empty>{search || tag || city || circle !== 'any' ? 'No matches.' : 'No one here yet.'}</Empty>}
 
       <LabelMenu
         anchor={menu?.el ?? null}

@@ -503,3 +503,18 @@ a.source-badge.link:hover { background: color-mix(in srgb, currentColor 10%, tra
 
 .merge-all { align-items: center; }
 .merge-all .grow { flex: 1 1 260px; }
+
+/* ---------- source icons ---------- */
+.source-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px; flex: none; }
+.source-icon.on { cursor: pointer; }
+.source-icon.on:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+.source-icon.off { color: var(--muted); opacity: 0.45; filter: grayscale(1); }
+.source-icon-text { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.pt-sources.badges, .badges:has(> .source-icon) { gap: 2px; align-items: center; }
+
+kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--surface); }
+
+/* ---------- birthdays ---------- */
+.birthday-today { background: color-mix(in srgb, #fdab3d 14%, var(--surface)); }
+.birthdays-page .person-right .input { width: auto; padding: 6px 8px; }
+@media (max-width: 520px) { .birthdays-page .person-row { flex-wrap: wrap; } .birthdays-page .person-right { width: 100%; padding-left: 42px; } }

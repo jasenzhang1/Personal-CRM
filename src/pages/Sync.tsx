@@ -67,8 +67,8 @@ const FILE_SOURCES: FileSource[] = [
     wait: 'Minutes to a few hours',
     steps: [
       'Download or transfer information → your profile → Some of your information.',
-      'Tick Friends, and Messages (for chat and call counts) → Download to device.',
-      'Date range: All time. Format: JSON. Create files.',
+      'Tick Friends (and Messages, for chat and call counts). Optional: Personal information, for the phone contacts you once uploaded.',
+      'Date range: All time. Format: JSON if you can (HTML works too). Create files.',
       'When it’s ready, download the .zip and drop it here.',
     ],
   },

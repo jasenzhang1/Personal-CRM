@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import { Empty, PageHead, PersonRow } from '@/components/ui';
 import { listPeople, updatePerson, type Person } from '@/db/people';
 import { daysBetween, daysUntilBirthday, followUpDue, isoDate, relativeDays } from '@/lib/dates';
@@ -29,7 +30,11 @@ export function Reminders() {
 
   return (
     <div className="page">
-      <PageHead title="Reminders" sub="Who to reach out to this week, and birthdays in the next 30 days." />
+      <PageHead title="Reminders" sub="Who to reach out to this week, and birthdays in the next 30 days.">
+        <Link className="btn secondary" to="/birthdays">
+          🎂 All birthdays
+        </Link>
+      </PageHead>
       {people && !followUps.length && !birthdays.length && (
         <Empty>
           Nothing due this week. On someone's profile, set how often you want to keep in touch and add their birthday, and

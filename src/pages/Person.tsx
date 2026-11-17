@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Avatar, Chips, Closeness, Modal, ScoreBadge, SourceBadge, TagInput, instagramUrl } from '@/components/ui';
+import { Avatar, Chips, Closeness, Modal, ScoreBadge, SourceIcon, TagInput, instagramUrl } from '@/components/ui';
 import { mergePeople } from '@/db/merge';
+import { sourceLinks } from '@/lib/sourceLinks';
 import { MergeForm } from './Duplicates';
 import {
   addStageNote,
@@ -13,6 +14,7 @@ import {
   getPerson,
   getSources,
   getStageEvents,
+  allCities,
   addInstagramAccount,
   setArchived,
   listPeople,
@@ -34,14 +36,14 @@ import { describeScoreInfo, type ScoreInfo } from '@/lib/ranking';
 import { useQuery, useStore } from '@/lib/store';
 
 type Form = {
-  name: string; phone: string; email: string; bMonth: string; bDay: string; bYear: string; company: string; title: string;
+  name: string; phone: string; email: string; bMonth: string; bDay: string; bYear: string; company: string; title: string; city: string;
   how_met: string; met_on: string; notes: string; closeness: number; follow_up: string; last_contacted: string;
   priority: string | null; deal_value: string; next_step: string; next_step_on: string;
   circle: Circle | null; photo: string | null; tags: string[];
 };
 
 const EMPTY: Form = {
-  name: '', phone: '', email: '', bMonth: '', bDay: '', bYear: '', company: '', title: '', how_met: '', met_on: '',
+  name: '', phone: '', email: '', bMonth: '', bDay: '', bYear: '', company: '', title: '', city: '', how_met: '', met_on: '',
   notes: '', closeness: 0, follow_up: 'none', last_contacted: '', priority: null, deal_value: '', next_step: '', next_step_on: '',
   circle: null, photo: null, tags: [],
 };
@@ -54,7 +56,7 @@ function splitBirthday(b: string | null) {
 
 const toForm = (p: Person): Form => ({
   name: p.name, phone: p.phone ?? '', email: p.email ?? '', ...splitBirthday(p.birthday), company: p.company ?? '',
-  title: p.title ?? '', how_met: p.how_met ?? '', met_on: p.met_on ?? '', notes: p.notes ?? '', closeness: p.closeness,
+  title: p.title ?? '', city: p.city ?? '', how_met: p.how_met ?? '', met_on: p.met_on ?? '', notes: p.notes ?? '', closeness: p.closeness,
   follow_up: p.follow_up, last_contacted: p.last_contacted ?? '', priority: p.priority,
   deal_value: p.deal_value != null ? String(p.deal_value) : '', next_step: p.next_step ?? '', next_step_on: p.next_step_on ?? '',
   circle: p.circle, photo: p.photo, tags: [],
@@ -107,6 +109,7 @@ export function PersonPage() {
   }, [db, id, queue]);
 
   const tagSuggestions = useQuery(() => allTags(db), []);
+  const citySuggestions = useQuery(() => allCities(db), []);
   const standing = useQuery(async () => {
     if (id === null || !person) return null;
     // Rank among everyone, so "#3 of 240" means the same thing here as on the Rank page.
@@ -139,7 +142,7 @@ export function PersonPage() {
     setError(null);
     const patch: PersonPatch = {
       name: form.name.trim(), phone: blank(form.phone), email: blank(form.email), birthday: b,
-      company: blank(form.company), title: blank(form.title), how_met: blank(form.how_met), met_on: blank(form.met_on),
+      company: blank(form.company), title: blank(form.title), city: blank(form.city), how_met: blank(form.how_met), met_on: blank(form.met_on),
       notes: blank(form.notes), closeness: form.closeness, follow_up: form.follow_up, last_contacted: blank(form.last_contacted),
       priority: form.priority, deal_value: value, next_step: blank(form.next_step), next_step_on: blank(form.next_step_on),
       circle: form.circle, photo: form.photo, status: 'reviewed',
@@ -218,6 +221,8 @@ export function PersonPage() {
   // Chat-only Instagram links have no username, so look for one that does.
   const igHandles = [...new Set(sources.filter((s) => s.source === 'instagram' && s.handle).map((s) => s.handle!.replace(/^@/, '')))];
   const igHandle = igHandles[0];
+  // Instagram first; LinkedIn when that's all we have.
+  const linkedinUrl = sourceLinks(sources.filter((x) => x.source === 'linkedin')).linkedin ?? null;
   const fromIgChatsOnly = !igHandle && sources.some((s) => s.source === 'instagram');
 
   if (missing) return <div className="page"><p className="empty">This person no longer exists. <Link to="/people">Back to People</Link></p></div>;
@@ -231,6 +236,24 @@ export function PersonPage() {
       onSubmit={(e) => {
         e.preventDefault();
         save(inQueue);
+      }}
+      // Copy their profile picture on Instagram or LinkedIn, then Ctrl+V here (or drag it in).
+      onPaste={(e) => {
+        const img = [...e.clipboardData.files].find((x) => x.type.startsWith('image/'));
+        if (img) {
+          e.preventDefault();
+          pickPhoto(img);
+        }
+      }}
+      onDragOver={(e) => {
+        if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        const img = [...e.dataTransfer.files].find((x) => x.type.startsWith('image/'));
+        if (img) {
+          e.preventDefault();
+          pickPhoto(img);
+        }
       }}
     >
       <div className="person-bar">
@@ -269,7 +292,7 @@ export function PersonPage() {
         <div className="grow">
           <input className="name-input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Name" aria-label="Name" autoFocus={isNew} />
           <div className="badges">
-            {[...new Set(sources.map((s) => s.source))].map((s) => <SourceBadge key={s} source={s} />)}
+            {Object.entries(sourceLinks(sources, form.phone)).map(([s, href]) => <SourceIcon key={s} source={s} href={href} size={22} />)}
             {sources.filter((s) => s.handle && s.source !== 'instagram').map((s) =>
               s.handle!.startsWith('http') ? (
                 <a key={`h${s.id}`} href={s.handle!} target="_blank" rel="noreferrer" className="small">{s.handle!.replace(/^https?:\/\/(www\.)?/, '')}</a>
@@ -296,13 +319,13 @@ export function PersonPage() {
         </div>
       </header>
       {inQueue && <p className="notice">New connection! Jot down how you met while it's fresh.</p>}
-      {!form.photo && igHandle && (
-        <p className="small muted">
-          No photo yet. Open{' '}
-          <a href={`https://www.instagram.com/${igHandle}/`} target="_blank" rel="noreferrer">
-            their Instagram ↗
+      {!form.photo && (igHandle || linkedinUrl) && (
+        <p className="small muted photo-hint">
+          No photo yet. Open their{' '}
+          <a href={igHandle ? instagramUrl(igHandle) : linkedinUrl!} target="_blank" rel="noreferrer">
+            {igHandle ? 'Instagram' : 'LinkedIn'} ↗
           </a>
-          , save their profile picture, then tap the 📷 above.
+          , right-click their profile picture → <strong>Copy image</strong>, then press <kbd>Ctrl</kbd>+<kbd>V</kbd> here. On a phone, save the picture and tap 📷.
         </p>
       )}
 
@@ -413,6 +436,12 @@ export function PersonPage() {
           <Card title="Contact">
             <input className="input" type="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="Phone" aria-label="Phone" />
             <input className="input" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="Email" aria-label="Email" />
+            <input className="input" value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="City they live in (e.g. Los Angeles, CA)" aria-label="City" list="city-suggestions" autoComplete="off" />
+            <datalist id="city-suggestions">
+              {(citySuggestions ?? []).map((c) => (
+                <option key={c.city} value={c.city} />
+              ))}
+            </datalist>
             <input className="input" value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Company" aria-label="Company" />
             <input className="input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Job title" aria-label="Job title" />
           </Card>
@@ -594,7 +623,7 @@ function MergeDialog({ open, person, onClose, onMerge }: { open: boolean; person
                     <span className="person-sub">{[p.how_met, p.company, p.email].filter(Boolean)[0] ?? ''}</span>
                   </span>
                 </button>
-                <span className="badges">{p.sources.map((s) => <SourceBadge key={s} source={s} />)}</span>
+                <span className="badges">{p.sources.map((s) => <SourceIcon key={s} source={s} href={p.links[s]} />)}</span>
               </li>
             ))}
           </ul>

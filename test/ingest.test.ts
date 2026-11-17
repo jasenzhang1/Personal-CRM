@@ -121,7 +121,7 @@ test('migrating a version-1 database adds the new column and tags table', async 
   // Turn it back into a version-1 database, as it was before this update.
   await db.execAsync('DROP TABLE person_tags; ALTER TABLE people DROP COLUMN circle; PRAGMA user_version = 1;');
   await migrate(db);
-  assert.equal((await db.getFirstAsync('PRAGMA user_version')).user_version, 7);
+  assert.equal((await db.getFirstAsync('PRAGMA user_version')).user_version, 8);
   const [ada] = await listPeople(db);
   assert.equal(ada.circle, null);
   await setTags(db, ada.id, ['UCLA']);

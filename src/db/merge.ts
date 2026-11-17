@@ -31,7 +31,7 @@ export async function richness(db: SQLiteDatabase, p: Person) {
   return fields * 2 + (p.status === 'reviewed' ? 3 : 0) + (looksStandard(p.name) ? 2 : 0) + (extra?.n ?? 0);
 }
 
-const FILL: (keyof Person)[] = ['phone', 'email', 'birthday', 'photo', 'company', 'title', 'how_met', 'met_on', 'circle', 'stage', 'priority', 'deal_value', 'next_step', 'next_step_on'];
+const FILL: (keyof Person)[] = ['phone', 'email', 'birthday', 'photo', 'company', 'title', 'city', 'how_met', 'met_on', 'circle', 'stage', 'priority', 'deal_value', 'next_step', 'next_step_on'];
 const STATUS_RANK: Record<string, number> = { archived: 0, new: 1, backlog: 2, reviewed: 3 };
 
 /**

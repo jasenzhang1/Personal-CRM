@@ -172,6 +172,82 @@ const SOURCE_STYLE: Record<string, [string, string]> = {
   facebook: ['Facebook', '#1877f2'],
 };
 
+/** Small brand marks, drawn here so nothing loads from other sites. */
+const SOURCE_GLYPH: Record<string, ReactNode> = {
+  instagram: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="5.5" fill="none" stroke="currentColor" strokeWidth="2.2" />
+      <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" strokeWidth="2.2" />
+      <circle cx="17.3" cy="6.7" r="1.4" fill="currentColor" />
+    </>
+  ),
+  linkedin: (
+    <>
+      <rect x="2" y="2" width="20" height="20" rx="4" fill="currentColor" />
+      <rect x="6" y="10" width="2.8" height="8" fill="#fff" />
+      <circle cx="7.4" cy="6.9" r="1.7" fill="#fff" />
+      <path d="M11 10h2.7v1.2c.5-.8 1.5-1.4 2.8-1.4 2.3 0 3.1 1.4 3.1 3.6V18h-2.8v-4c0-1-.3-1.8-1.3-1.8-1.1 0-1.6.8-1.6 1.9V18H11z" fill="#fff" />
+    </>
+  ),
+  facebook: (
+    <>
+      <circle cx="12" cy="12" r="10" fill="currentColor" />
+      <path d="M13.2 21.9v-7h2.4l.4-2.8h-2.8v-1.8c0-.8.3-1.4 1.4-1.4H16V6.4c-.3 0-1.1-.1-2-.1-2 0-3.4 1.2-3.4 3.5v2.3H8.3v2.8h2.3v7z" fill="#fff" />
+    </>
+  ),
+  discord: (
+    <>
+      <path d="M19.3 5.4A16 16 0 0 0 15.4 4.2l-.5 1a14.6 14.6 0 0 0-5.8 0l-.5-1a16 16 0 0 0-3.9 1.2C2.2 9.1 1.5 12.7 1.9 16.3a16 16 0 0 0 4.8 2.4l1-1.6c-.6-.2-1.1-.5-1.6-.8l.4-.3a11.4 11.4 0 0 0 10.1 0l.4.3c-.5.3-1 .6-1.6.8l1 1.6a16 16 0 0 0 4.8-2.4c.5-4.1-.6-7.7-1.9-10.9z" fill="currentColor" />
+      <ellipse cx="8.8" cy="12.6" rx="1.6" ry="1.8" fill="#fff" />
+      <ellipse cx="15.2" cy="12.6" rx="1.6" ry="1.8" fill="#fff" />
+    </>
+  ),
+  google: (
+    <path d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3zM12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22zm-5.6-8a6 6 0 0 1 0-3.9V7.5H3.1a10 10 0 0 0 0 9zM12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.5l3.3 2.6C7.2 7.7 9.4 5.9 12 5.9z" fill="currentColor" />
+  ),
+  phone: (
+    <>
+      <rect x="2" y="2" width="20" height="20" rx="5" fill="currentColor" />
+      <circle cx="12" cy="9.3" r="3.3" fill="#fff" />
+      <path d="M5.8 18.6c.9-2.8 3.3-4.3 6.2-4.3s5.3 1.5 6.2 4.3z" fill="#fff" />
+    </>
+  ),
+};
+
+/**
+ * A source as its brand icon: in color and clickable when we have a link to their profile there,
+ * gray when that source only gave us a name (e.g. Facebook friends).
+ */
+export function SourceIcon({ source, href, size = 18 }: { source: string; href?: string | null; size?: number }) {
+  const [label, color] = SOURCE_STYLE[source] ?? [source, 'var(--muted)'];
+  const glyph = SOURCE_GLYPH[source];
+  const icon = glyph ? (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">{glyph}</svg>
+  ) : (
+    <span className="source-icon-text">{label.slice(0, 2)}</span>
+  );
+  if (href)
+    return (
+      <a
+        className="source-icon on"
+        style={{ color }}
+        href={href}
+        target={href.startsWith('tel:') ? undefined : '_blank'}
+        rel="noreferrer"
+        title={source === 'phone' ? `Call (${label})` : `Open on ${label}`}
+        aria-label={source === 'phone' ? `Call (${label})` : `Open their ${label}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {icon}
+      </a>
+    );
+  return (
+    <span className="source-icon off" title={`${label} (no profile link)`} aria-label={label} role="img">
+      {icon}
+    </span>
+  );
+}
+
 /** "Instagram", "Contacts"…; pass `href` to make it open their profile in a new tab. */
 export function SourceBadge({ source, href }: { source: string; href?: string }) {
   const [label, color] = SOURCE_STYLE[source] ?? [source, 'var(--muted)'];

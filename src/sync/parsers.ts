@@ -23,6 +23,10 @@ export interface Candidate {
   company?: string;
   title?: string;
   photo?: string;
+  /** City they live in, from a contact address. */
+  city?: string;
+  /** Old uploaded address books: file under Older connections, never the Inbox. */
+  quiet?: boolean;
 }
 
 export interface ParseResult {
@@ -306,6 +310,8 @@ export function parseVcards(text: string): Candidate[] {
         });
         const photo = first('PHOTO') && vcardPhoto(first('PHOTO')!.value, first('PHOTO')!.params);
         if (photo) out[out.length - 1].photo = photo;
+        const city = vcardCity(card.ADR ?? []);
+        if (city) out[out.length - 1].city = city;
       }
       card = null;
     } else if (card) (card[prop] ??= []).push({ value, params });
@@ -339,6 +345,7 @@ export type GooglePerson = {
   birthdays?: { date?: { year?: number; month?: number; day?: number } }[];
   organizations?: { name?: string; title?: string }[];
   photos?: { url?: string; default?: boolean }[];
+  addresses?: { city?: string; region?: string; type?: string }[];
 };
 
 const AUTOMATED_EMAIL = /(^|[._+-])(no-?reply|do-?not-?reply|notifications?|mailer-daemon|bounce|alerts?|support|info|hello|team|news(letter)?|billing|receipts?|updates?)([._+-]|@)/i;
@@ -369,6 +376,7 @@ export function fromGooglePeople(people: GooglePerson[]): Candidate[] {
       company: p.organizations?.[0]?.name || undefined,
       title: p.organizations?.[0]?.title || undefined,
       photo,
+      ...(googleCity(p.addresses) ? { city: googleCity(p.addresses) } : {}),
     });
   }
   return out;
@@ -417,6 +425,10 @@ export function isRelevantExportEntry(path: string): boolean {
     /^followers(_\d+)?\.json$/.test(base) ||
     base === 'following.json' ||
     base === 'your_friends.json' ||
+    base === 'your_friends.html' ||
+    base === 'friends.html' ||
+    base === 'your_address_books.json' ||
+    base === 'synced_contacts.json' ||
     base === 'friends.json' ||
     (base === 'user.json' && /(^|\/)account\//i.test(path)) ||
     base.endsWith('.vcf')
@@ -476,6 +488,11 @@ export function parseExportFile(fileName: string, text: string): ParseResult {
     if (!candidates.length) throw new Error(`No contacts found in ${fileName}.`);
     return { kind: 'phone', candidates };
   }
+  if (/^<(!doctype|html)/i.test(trimmed)) {
+    const fb = parseFacebookFriendsHtml(trimmed);
+    if (fb.length) return { kind: 'facebook', candidates: fb };
+    throw new Error(`Couldn't find friends in ${fileName}. If this is a Facebook export, request it again in JSON format.`);
+  }
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     let json: unknown;
     try {
@@ -484,6 +501,11 @@ export function parseExportFile(fileName: string, text: string): ParseResult {
       throw new Error(`${fileName} is not valid JSON.`);
     }
     if (looksLikeDiscord(json)) return { kind: 'discord', candidates: parseDiscord(json) };
+    const book = parseAddressBook(json);
+    if (book) {
+      if (!book.length) throw new Error(`${fileName}: the address book is empty.`);
+      return { kind: 'phone', candidates: book };
+    }
     if (looksLikeInstagram(json)) return { kind: 'instagram', candidates: parseInstagram(json) };
     const fb = parseFacebook(json);
     if (fb.length) return { kind: 'facebook', candidates: fb };
@@ -492,4 +514,154 @@ export function parseExportFile(fileName: string, text: string): ParseResult {
     );
   }
   return { kind: 'linkedin', candidates: parseLinkedIn(trimmed) };
+}
+
+/** "Los Angeles" + "CA" → "Los Angeles, CA". Short regions (states, provinces) are kept; long ones dropped. */
+export function formatCity(city?: string, region?: string): string | undefined {
+  const c = city?.trim();
+  if (!c) return undefined;
+  const r = region?.trim();
+  return r && r.length <= 3 && !c.includes(',') ? `${c}, ${r.toUpperCase()}` : c;
+}
+
+/** vCard ADR = PO box;extended;street;city;region;postal code;country. Prefers a HOME address. */
+function vcardCity(adrs: { value: string; params: string }[]): string | undefined {
+  const sorted = [...adrs].sort((a, b) => Number(/home/i.test(b.params)) - Number(/home/i.test(a.params)));
+  for (const a of sorted) {
+    const parts = splitVcard(a.value).map((p) => unescapeVcard(p).trim());
+    const city = formatCity(parts[3], parts[4]);
+    if (city) return city;
+  }
+  return undefined;
+}
+
+function googleCity(addresses?: { city?: string; region?: string; type?: string }[]): string | undefined {
+  const sorted = [...(addresses ?? [])].sort((a, b) => Number(b.type === 'home') - Number(a.type === 'home'));
+  for (const a of sorted) {
+    const city = formatCity(a.city, a.region);
+    if (city) return city;
+  }
+  return undefined;
+}
+
+/* ---------------- Facebook in HTML format ---------------- */
+
+const decodeEntities = (t: string) =>
+  t
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+
+const FB_DATE = /^([A-Z][a-z]{2,8}\.? \d{1,2}, \d{4})/;
+const MONTHS3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function fbDate(t: string): string | undefined {
+  const m = FB_DATE.exec(t);
+  if (!m) return undefined;
+  const [mon, day, year] = m[1].replace('.', '').replace(',', '').split(' ');
+  const i = MONTHS3.indexOf(mon.slice(0, 3).toLowerCase());
+  return i < 0 ? undefined : `${year}-${pad(i + 1)}-${pad(Number(day))}`;
+}
+
+/**
+ * Facebook "Download your information" defaults to HTML. Each friend is a box with their name
+ * followed by the date you became friends (current layout: class "_a6-g"; older: "uiBoxWhite";
+ * oldest: a <li>Name (date)</li> list).
+ */
+export function parseFacebookFriendsHtml(html: string): Candidate[] {
+  const body = html.replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, '');
+  const textsOf = (chunk: string) =>
+    chunk
+      .replace(/<[^>]+>/g, '\n')
+      .split('\n')
+      .map((t) => decodeEntities(t).trim())
+      .filter(Boolean);
+  const found: { name: string; date?: string }[] = [];
+  const blocks = body.split(/<div class="[^"]*\b(?:_a6-g|uiBoxWhite)\b[^"]*">/).slice(1);
+  for (const b of blocks) {
+    const [name, ...rest] = textsOf(b);
+    if (!name || FB_DATE.test(name)) continue;
+    found.push({ name, date: rest.map(fbDate).find(Boolean) });
+  }
+  if (!found.length) {
+    for (const m of body.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)) {
+      const t = textsOf(m[1]).join(' ');
+      const mm = /^(.+?)\s*\((.+)\)\s*$/.exec(t);
+      const name = (mm ? mm[1] : t).trim();
+      if (name) found.push({ name, date: mm ? fbDate(mm[2]) : undefined });
+    }
+  }
+  const seen = new Set<string>();
+  const out: Candidate[] = [];
+  for (const { name, date } of found) {
+    const n = fixMojibake(name).trim();
+    // Skip page furniture like the "Your friends" heading.
+    if (!n || n.length > 80 || /^(your |friends?$)/i.test(n) || seen.has(n.toLowerCase())) continue;
+    seen.add(n.toLowerCase());
+    out.push({ source: 'facebook', externalId: n.toLowerCase(), name: n, connectedOn: date });
+  }
+  return out;
+}
+
+/* ---------------- address books (contacts you uploaded to Facebook / Instagram) ---------------- */
+
+/**
+ * Facebook's your_address_books.json and Instagram's synced_contacts.json are copies of your
+ * phone's contacts that you once let the app upload: names with phone numbers and emails.
+ * They're treated like phone contacts. Returns null if this isn't an address book.
+ */
+export function parseAddressBook(json: unknown): Candidate[] | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const top = Object.entries(json as Record<string, unknown>);
+  // Instagram: { contacts_contact_info: [{ string_map_data: { "First Name": {value}, ... } }] }
+  const ig = top.find(([k, v]) => /contact/i.test(k) && Array.isArray(v) && (v as any[])[0]?.string_map_data);
+  if (ig) {
+    const key = nameKeys();
+    const out: Candidate[] = [];
+    for (const item of ig[1] as { string_map_data?: Record<string, { value?: string }> }[]) {
+      const m = item.string_map_data ?? {};
+      const get = (label: string) => fixMojibake(Object.entries(m).find(([k]) => k.toLowerCase() === label)?.[1]?.value?.trim() ?? '');
+      const name = [get('first name'), get('last name')].filter(Boolean).join(' ');
+      const info = get('contact information');
+      const display = name || info;
+      if (!display) continue;
+      const emails = info.includes('@') ? [info] : undefined;
+      const phones = info && !info.includes('@') ? [info] : undefined;
+      out.push({ source: 'phone', externalId: 'ig-contacts:' + key(display + ' ' + info), name: display, phones, emails, quiet: true });
+    }
+    return out;
+  }
+  // Facebook: { address_book_v2: { address_book: [{ name, details: [{ contact_point }] }] } } (shapes vary by year)
+  const fbList = (() => {
+    for (const [k, v] of top) {
+      if (!/address_book/i.test(k)) continue;
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === 'object') for (const inner of Object.values(v)) if (Array.isArray(inner)) return inner;
+    }
+    return null;
+  })();
+  if (!fbList) return null;
+  const key = nameKeys();
+  const out: Candidate[] = [];
+  for (const item of fbList as { name?: string; details?: { contact_point?: string }[] }[]) {
+    const name = fixMojibake(item?.name ?? '').trim();
+    const points = (item?.details ?? []).map((d) => d.contact_point?.trim()).filter((x): x is string => !!x);
+    const display = name || points[0];
+    if (!display) continue;
+    const emails = points.filter((p) => p.includes('@'));
+    const phones = points.filter((p) => !p.includes('@'));
+    out.push({
+      source: 'phone',
+      externalId: 'fb-contacts:' + key(display + ' ' + (points[0] ?? '')),
+      name: display,
+      phones: phones.length ? phones : undefined,
+      emails: emails.length ? emails : undefined,
+      quiet: true,
+    });
+  }
+  return out;
 }

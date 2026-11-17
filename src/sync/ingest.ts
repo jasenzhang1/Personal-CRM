@@ -86,6 +86,7 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
         if (!person.photo && c.photo) fill.photo = c.photo;
         if (!person.company && c.company) fill.company = c.company;
         if (!person.title && c.title) fill.title = c.title;
+        if (!person.city && c.city) fill.city = c.city;
         if (!person.met_on && c.connectedOn) fill.met_on = c.connectedOn;
         const keys = Object.keys(fill);
         if (keys.length) {
@@ -108,10 +109,10 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
       }
 
       const r = await db.runAsync(
-        `INSERT INTO people (name, phone, email, birthday, photo, company, title, met_on, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        c.name, phone, email, c.birthday ?? null, c.photo ?? null, c.company ?? null, c.title ?? null,
-        c.connectedOn ?? null, baseline ? 'backlog' : 'new', t, t,
+        `INSERT INTO people (name, phone, email, birthday, photo, company, title, city, met_on, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        c.name, phone, email, c.birthday ?? null, c.photo ?? null, c.company ?? null, c.title ?? null, c.city ?? null,
+        c.connectedOn ?? null, baseline || c.quiet ? 'backlog' : 'new', t, t,
       );
       const id = r.lastInsertRowId;
       await db.runAsync(

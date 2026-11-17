@@ -214,3 +214,47 @@ test('parseMany merges files of the same source and de-duplicates', () => {
   assert.deepEqual(b.bySource.get('instagram')!.map((c) => c.name), ['sam', 'kim', 'lee']);
   assert.equal(b.files.filter((f) => f.error).length, 1);
 });
+
+test('city of residence from vCard and Google addresses', async () => {
+  const { parseVcards, fromGooglePeople, formatCity } = await import('../src/sync/parsers.ts');
+  const card = 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ana Ruiz\r\nitem1.ADR;type=WORK:;;1 Main St;San Diego;ca;92101;USA\r\nitem2.ADR;type=HOME;type=pref:;;12 Elm St;Los Angeles;CA;90024;USA\r\nEND:VCARD';
+  assert.equal(parseVcards(card)[0].city, 'Los Angeles, CA');
+  assert.equal(fromGooglePeople([{ resourceName: 'people/c1', names: [{ displayName: 'Bo' }], addresses: [{ city: 'Toronto', region: 'Ontario', type: 'home' }] }])[0].city, 'Toronto');
+  assert.equal(formatCity('Seattle', 'wa'), 'Seattle, WA');
+  assert.equal(formatCity('', 'CA'), undefined);
+});
+
+test('Facebook friends in HTML format (current and older layouts)', async () => {
+  const { parseExportFile } = await import('../src/sync/parsers.ts');
+  const current = `<!DOCTYPE html><html><head><title>Your friends</title><style>.x{}</style></head><body><div class="_a705"><div class="_3-8y _3-95 _a6-g"><div class="_2ph_ _a6-h _a6-i">Ana Ruiz</div><div class="_2ph_ _a6-p"><div><div></div></div></div><div class="_3-94 _a6-o"><div class="_a72d">Apr 03, 2021 7:01:20 pm</div></div></div><div class="_3-8y _3-95 _a6-g"><div class="_2ph_ _a6-h _a6-i">Conan O&#039;Brien</div><div class="_3-94 _a6-o"><div class="_a72d">Dec 9, 2015</div></div></div></div></body></html>`;
+  const r = parseExportFile('facebook.zip › connections/friends/your_friends.html', current);
+  assert.equal(r.kind, 'facebook');
+  assert.deepEqual(r.candidates.map((c) => [c.name, c.connectedOn]), [['Ana Ruiz', '2021-04-03'], ["Conan O'Brien", '2015-12-09']]);
+  const older = `<html><body><div class="pam _3-95 _2pi0 _2lej uiBoxWhite noborder"><div class="_3-96 _2pio _2lek _2lel">Bo Chen</div><div class="_3-94 _2lem">Jan 5, 2012</div></div></body></html>`;
+  assert.deepEqual(parseExportFile('friends.html', older).candidates.map((c) => [c.name, c.connectedOn]), [['Bo Chen', '2012-01-05']]);
+  const oldest = `<html><body><h1>Friends</h1><ul><li>Dee Park (Mar 2, 2010)</li><li>Eli Wu</li></ul></body></html>`;
+  assert.deepEqual(parseExportFile('friends.html', oldest).candidates.map((c) => [c.name, c.connectedOn]), [['Dee Park', '2010-03-02'], ['Eli Wu', undefined]]);
+});
+
+test('address books from Facebook and Instagram become quiet phone contacts', async () => {
+  const { parseExportFile, isRelevantExportEntry } = await import('../src/sync/parsers.ts');
+  assert.ok(isRelevantExportEntry('fb.zip › personal_information/other_personal_information/your_address_books.json'));
+  assert.ok(isRelevantExportEntry('ig.zip › connections/contacts/synced_contacts.json'));
+  const fb = parseExportFile('your_address_books.json', JSON.stringify({ address_book_v2: { address_book: [{ name: 'Mom', details: [{ contact_point: '+1 555 0100' }, { contact_point: 'mom@x.com' }], created_timestamp: 1 }] } }));
+  assert.equal(fb.kind, 'phone');
+  assert.deepEqual([fb.candidates[0].name, fb.candidates[0].phones, fb.candidates[0].emails, fb.candidates[0].quiet], ['Mom', ['+1 555 0100'], ['mom@x.com'], true]);
+  const ig = parseExportFile('synced_contacts.json', JSON.stringify({ contacts_contact_info: [{ string_map_data: { 'First Name': { value: 'Ana' }, 'Last Name': { value: 'Ruiz' }, 'Contact Information': { value: '3105550100' } } }] }));
+  assert.deepEqual([ig.kind, ig.candidates[0].name, ig.candidates[0].phones], ['phone', 'Ana Ruiz', ['3105550100']]);
+});
+
+test('birthday calendar file', async () => {
+  const { birthdaysIcs, turningAge } = await import('../src/lib/birthdays.ts');
+  const ics = birthdaysIcs([{ id: 1, name: 'Ana Ruiz', birthday: '1999-03-14' }, { id: 2, name: 'Bo', birthday: '02-29' }, { id: 3, name: 'No Bday', birthday: null }]);
+  assert.match(ics, /BEGIN:VCALENDAR/);
+  assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, 2);
+  assert.match(ics, /DTSTART;VALUE=DATE:19990314/);
+  assert.match(ics, /RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1/);
+  assert.match(ics, /SUMMARY:🎂 Ana Ruiz's birthday/);
+  assert.equal(turningAge('1999-03-14', new Date(2026, 10, 17)), 28);
+  assert.equal(turningAge('03-14'), null);
+});

@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -156,6 +156,11 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS ig_events_kind ON ig_events(kind, at);
     `);
+  }
+
+  if (current < 8) {
+    // Where they live ("Los Angeles, CA"). Filled from phone/Google contact addresses or by you.
+    await addColumn(db, 'people', 'city', 'TEXT');
   }
 
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
