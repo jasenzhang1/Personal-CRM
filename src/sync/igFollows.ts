@@ -9,6 +9,7 @@
 import type { SQLiteDatabase } from '@/db/types';
 import { getSetting, setSetting } from '@/db/people';
 import { isoDate } from '@/lib/dates';
+import { matchRenames, renameInstagram, suggestRename } from './renames';
 
 export type FollowList = 'followers' | 'following';
 
@@ -75,13 +76,15 @@ export interface FollowSyncResult {
   previous: string | null;
   gained: number;
   lost: number;
+  /** Accounts that changed their username (moved over, not counted as gained or lost). */
+  renamed: number;
 }
 
 /** Save the current followers or following list and record who appeared or disappeared since last time. */
 export async function syncFollowList(db: SQLiteDatabase, list: FollowList, entries: FollowEntry[], exportDate: string): Promise<FollowSyncResult> {
   const key = `ig_${list}_export`;
   const previous = await getSetting(db, key);
-  const res: FollowSyncResult = { list, count: entries.length, baseline: !previous, older: false, previous, gained: 0, lost: 0 };
+  const res: FollowSyncResult = { list, count: entries.length, baseline: !previous, older: false, previous, gained: 0, lost: 0, renamed: 0 };
   if (previous && exportDate < previous) return { ...res, older: true };
 
   const flag = list === 'followers' ? 'follows_me' : 'i_follow';
@@ -89,9 +92,27 @@ export async function syncFollowList(db: SQLiteDatabase, list: FollowList, entri
   const [gainKind, lossKind] = list === 'followers' ? ['followed_me', 'unfollowed_me'] : ['i_followed', 'i_unfollowed'];
   const now = new Date().toISOString();
   const current = new Set(entries.map((e) => e.username));
-  const before = new Set((await db.getAllAsync<{ username: string }>(`SELECT username FROM ig_accounts WHERE ${flag} = 1`)).map((r) => r.username));
+  const beforeRows = await db.getAllAsync<{ username: string; since: string | null }>(`SELECT username, ${since} AS since FROM ig_accounts WHERE ${flag} = 1`);
+  const before = new Set(beforeRows.map((r) => r.username));
 
   await db.withTransactionAsync(async () => {
+    if (previous) {
+      // Someone who vanished, and a "new" username with the same follow date from before the last
+      // export (a real new follow is dated after it): they changed their username.
+      const gone = beforeRows.filter((r) => !current.has(r.username)).map((r) => ({ id: r.username, on: r.since }));
+      const arrived = entries.filter((e) => !before.has(e.username) && e.at && e.at < previous).map((e) => ({ id: e.username, on: e.at }));
+      const byName = new Map(entries.map((e) => [e.username, e]));
+      for (const m of matchRenames(gone, arrived)) {
+        if (!m.unique) {
+          await suggestRename(db, 'instagram', m.oldId, m.newId, exportDate);
+          continue;
+        }
+        await renameInstagram(db, m.oldId, m.newId, byName.get(m.newId)!.display, exportDate);
+        before.delete(m.oldId);
+        before.add(m.newId);
+        res.renamed++;
+      }
+    }
     for (const e of entries) {
       await db.runAsync(
         `INSERT INTO ig_accounts (username, display, ${flag}, ${since}, updated_at) VALUES (?, ?, 1, ?, ?)
@@ -136,7 +157,8 @@ export function describeFollowSync(r: FollowSyncResult): string {
   const what = r.list === 'followers' ? 'followers' : 'accounts you follow';
   if (r.older) return `Instagram ${what}: this export is older than the one from ${r.previous}, so changes weren't compared.`;
   if (r.baseline) return `Instagram ${what}: saved ${r.count.toLocaleString()} as a starting point. Import a newer export later to see who unfollowed.`;
+  const renamed = r.renamed ? `, ${r.renamed.toLocaleString()} changed their username` : '';
   if (r.list === 'followers')
-    return `Instagram followers since ${r.previous}: ${r.gained.toLocaleString()} new, ${r.lost.toLocaleString()} unfollowed you.`;
-  return `Accounts you follow since ${r.previous}: ${r.gained.toLocaleString()} followed, ${r.lost.toLocaleString()} unfollowed.`;
+    return `Instagram followers since ${r.previous}: ${r.gained.toLocaleString()} new, ${r.lost.toLocaleString()} unfollowed you${renamed}.`;
+  return `Accounts you follow since ${r.previous}: ${r.gained.toLocaleString()} followed, ${r.lost.toLocaleString()} unfollowed${renamed}.`;
 }

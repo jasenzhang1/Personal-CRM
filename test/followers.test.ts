@@ -36,6 +36,8 @@ function fakeDb() {
 }
 
 const followers = (...us: string[]) => JSON.stringify(us.map((u) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: 1700000000 }] })));
+/** Followers with their own follow times, as real exports have: [username, unix seconds]. */
+const followersAt = (...us: [string, number][]) => JSON.stringify(us.map(([u, ts]) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: ts }] })));
 const following = (...us: string[]) => JSON.stringify({ relationships_following: us.map((u) => ({ title: u, string_list_data: [{ href: `https://www.instagram.com/_u/${u}`, timestamp: 1690000000 }] })) });
 
 test('recognizing and parsing follow lists', () => {
@@ -55,7 +57,7 @@ test('comparing exports finds unfollows, new followers and who does not follow b
   assert.deepEqual([r.baseline, r.gained, r.lost], [true, 0, 0]);
   await syncFollowList(db, 'following', parseFollowList(following('amy', 'celebrity', 'dan')), '2026-10-01');
   // Newer export: bob unfollowed, eve followed.
-  r = await syncFollowList(db, 'followers', parseFollowList(followers('amy', 'cat', 'eve')), '2026-11-16');
+  r = await syncFollowList(db, 'followers', parseFollowList(followersAt(['amy', 1700000000], ['cat', 1700000000], ['eve', 1793000000])), '2026-11-16');
   assert.deepEqual([r.baseline, r.gained, r.lost, r.previous], [false, 1, 1, '2026-10-01']);
   // An older export dropped later doesn't undo anything.
   r = await syncFollowList(db, 'followers', parseFollowList(followers('amy', 'bob', 'cat')), '2026-09-01');
@@ -67,7 +69,7 @@ test('comparing exports finds unfollows, new followers and who does not follow b
   const events = await listFollowEvents(db);
   assert.deepEqual(events.map((e) => [e.kind, e.username, e.after, e.at]), [
     ['unfollowed_me', 'bob', '2026-10-01', '2026-11-16'],
-    ['followed_me', 'eve', '2026-10-01', '2023-11-14'],
+    ['followed_me', 'eve', '2026-10-01', '2026-10-26'],
   ]);
   // Bob follows again in a third export.
   await syncFollowList(db, 'followers', parseFollowList(followers('amy', 'cat', 'eve', 'bob')), '2026-12-20');

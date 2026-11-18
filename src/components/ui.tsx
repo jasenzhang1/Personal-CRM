@@ -228,7 +228,8 @@ export function SourceIcon({ source, href, size = 18, missing }: { source: strin
   ) : (
     <span className="source-icon-text">{label.slice(0, 2)}</span>
   );
-  if (href)
+  if (href) {
+    const search = href.includes('facebook.com/search/');
     return (
       <a
         className="source-icon on"
@@ -236,13 +237,14 @@ export function SourceIcon({ source, href, size = 18, missing }: { source: strin
         href={href}
         target={href.startsWith('tel:') ? undefined : '_blank'}
         rel="noreferrer"
-        title={source === 'phone' ? `Call (${label})` : `Open on ${label}`}
-        aria-label={source === 'phone' ? `Call (${label})` : `Open their ${label}`}
+        title={source === 'phone' ? `Call (${label})` : search ? `Search ${label} for them` : `Open on ${label}`}
+        aria-label={source === 'phone' ? `Call (${label})` : search ? `Search ${label} for them` : `Open their ${label}`}
         onClick={(e) => e.stopPropagation()}
       >
         {icon}
       </a>
     );
+  }
   return (
     <span
       className={`source-icon off${missing ? ' missing' : ''}`}

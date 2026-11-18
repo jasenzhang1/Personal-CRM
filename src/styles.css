@@ -19,7 +19,7 @@
   --radius: 12px;
   --sidebar: 232px;
   --tabbar: 62px;
-  --edit-bar: 42px;
+  --edit-bar: 0px;
   color-scheme: light;
 }
 
@@ -125,18 +125,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .text-danger { color: var(--danger); }
 .empty { text-align: center; color: var(--muted); padding: 40px 16px; max-width: 520px; margin: 0 auto; line-height: 1.6; }
 /* ---------- edit mode ---------- */
-.edit-bar {
-  position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 8px;
-  height: var(--edit-bar); box-sizing: border-box; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border);
-}
-.edit-bar.on { background: var(--primary-soft); border-bottom-color: var(--primary); }
+.edit-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+.edit-bar.on { background: var(--primary-soft); border-color: var(--primary); }
 .edit-toast {
   position: fixed; z-index: 60; left: 16px; right: 16px; bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 12px);
   display: flex; align-items: center; gap: 8px; max-width: 520px; margin: 0 auto;
   padding: 10px 12px; border-radius: 10px; background: var(--surface); color: var(--text);
   border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
 }
-@media (min-width: 860px) { .edit-bar { padding: 0 32px; } }
 @media (min-width: 860px) { .edit-toast { bottom: 24px; left: calc(var(--sidebar) + 16px); } }
 
 .notice { background: var(--primary-soft); color: var(--text); padding: 10px 14px; border-radius: 10px; }
@@ -219,6 +215,9 @@ select.input { width: auto; flex: 1; min-width: 90px; }
 .person-head { display: flex; align-items: center; gap: 16px; }
 .name-input { width: 100%; font-size: 26px; font-weight: 750; border: 0; background: transparent; padding: 2px 0; border-bottom: 2px solid transparent; }
 .name-input:focus { outline: none; border-bottom-color: var(--primary); }
+.nickname-input { width: 100%; font-size: 15px; color: var(--muted, inherit); border: 0; background: transparent; padding: 2px 0; border-bottom: 1px solid transparent; }
+.nickname-input:focus { outline: none; border-bottom-color: var(--primary); color: inherit; }
+.person-name .nickname { font-weight: 400; opacity: 0.65; }
 .person-grid { display: grid; gap: 16px; }
 @media (min-width: 900px) { .person-grid { grid-template-columns: 3fr 2fr; align-items: start; } .person-page { max-width: 1100px; } }
 .field { display: flex; flex-direction: column; gap: 6px; }

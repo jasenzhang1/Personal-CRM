@@ -1,6 +1,7 @@
 /**
  * Where to open someone's profile for each place they came from, when the export gave us enough
- * to build a link. Facebook's friends export has names only, so it never links.
+ * to build a link. Facebook's friends export has names only (no profile link or id), so Facebook
+ * opens a search for their name instead.
  */
 export function profileUrl(source: string, externalId: string, handle: string | null, phone?: string | null): string | null {
   if (externalId.startsWith('chat:')) return null; // a chat, not an account
@@ -12,6 +13,8 @@ export function profileUrl(source: string, externalId: string, handle: string | 
     }
     case 'linkedin':
       return /^https?:\/\/(www\.)?linkedin\.com\//i.test(h) ? h : /^https?:\/\/(www\.)?linkedin\.com\//i.test(externalId) ? externalId : null;
+    case 'facebook':
+      return externalId.startsWith('fb-contacts:') ? null : `https://www.facebook.com/search/people/?q=${encodeURIComponent(externalId)}`;
     case 'discord':
       return /^\d{5,}$/.test(externalId) ? `https://discord.com/users/${externalId}` : null;
     case 'google': {

@@ -16,7 +16,7 @@ import { Reminders } from './pages/Reminders';
 import { Sync } from './pages/Sync';
 
 function Layout() {
-  const { inboxCount, proMode, saveError, editing, hasEdits, beginEdit, saveEdit, discardEdit, blocked, dismissBlocked } = useStore();
+  const { inboxCount, proMode, saveError, editing, beginEdit, blocked, dismissBlocked } = useStore();
   const sync = useCloud();
   const links = [
     { to: '/', label: 'Inbox', icon: '📥', badge: inboxCount },
@@ -42,35 +42,6 @@ function Layout() {
         ))}
       </nav>
       <main className="main">
-        <div className={`edit-bar${editing ? ' on' : ''}`} role="region" aria-label="Edit mode">
-          {editing ? (
-            <>
-              <span className="grow small">
-                <strong>Editing.</strong> {hasEdits ? 'Your changes aren’t saved until you press Save.' : 'Make your changes, then press Save.'}
-              </span>
-              <button
-                type="button"
-                className="btn ghost small"
-                onClick={() => {
-                  if (hasEdits && !confirm('Throw away every change since you turned on Edit mode?')) return;
-                  discardEdit();
-                }}
-              >
-                {hasEdits ? 'Discard' : 'Cancel'}
-              </button>
-              <button type="button" className="btn primary small" onClick={() => void saveEdit()}>
-                Save
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="grow small muted">View only</span>
-              <button type="button" className="btn secondary small" onClick={beginEdit}>
-                ✎ Edit
-              </button>
-            </>
-          )}
-        </div>
         {saveError && (
           <p className="notice err save-error" role="alert">
             ⚠ This browser refused to save your latest changes ({saveError}). They're kept while this tab stays open. Download a backup from

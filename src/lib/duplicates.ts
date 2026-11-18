@@ -14,12 +14,28 @@ export interface DupSource {
 export interface DupPerson {
   id: number;
   name: string;
+  nickname?: string | null;
   email: string | null;
   phone: string | null;
   sources: DupSource[];
 }
 
-export type DupReason = 'same-contact' | 'chat-name' | 'same-name' | 'username' | 'suggested' | 'initial';
+/**
+ * Every name someone goes by: their name, their nickname, and the nickname with their last name
+ * ("Wei Zhang" who goes by "David" is also "David Zhang").
+ */
+export function namesOf(p: { name: string; nickname?: string | null }): string[] {
+  const out = [p.name];
+  const nick = p.nickname?.trim();
+  if (nick) {
+    out.push(nick);
+    const words = nameKey(p.name).split(' ');
+    if (!nameKey(nick).includes(' ') && words.length >= 2) out.push(`${nick} ${words[words.length - 1]}`);
+  }
+  return [...new Map(out.filter((n) => nameKey(n)).map((n) => [nameKey(n), n])).values()];
+}
+
+export type DupReason = 'same-contact' | 'chat-name' | 'same-name' | 'username' | 'renamed' | 'suggested' | 'initial';
 export interface DupPair {
   a: number;
   b: number;
@@ -32,6 +48,7 @@ export const DUP_REASONS: Record<DupReason, string> = {
   'chat-name': 'Same name they use on Instagram or in chats',
   'same-name': 'Same name',
   username: 'Username matches their name',
+  renamed: 'One account disappeared and this one appeared, connected the same day: did they change their name or username?',
   suggested: 'Cleaned-up username matches their name',
   initial: 'Username is first initial + last name',
 };
@@ -54,7 +71,8 @@ const differentAccounts = (x: DupPerson, y: DupPerson) => {
   return a.size > 0 && b.size > 0 && ![...a].some((id) => b.has(id));
 };
 
-export function findDuplicates(people: DupPerson[], dismissed: Set<string> = new Set()): DupPair[] {
+/** `renamed`: pairs of people whose accounts look like one account before and after a rename. */
+export function findDuplicates(people: DupPerson[], dismissed: Set<string> = new Set(), renamed: { a: number; b: number }[] = []): DupPair[] {
   const out = new Map<string, DupPair>();
   const add = (x: number, y: number, reason: DupReason, strong: boolean) => {
     if (x === y) return;
@@ -72,10 +90,11 @@ export function findDuplicates(people: DupPerson[], dismissed: Set<string> = new
   const byName = new Map<string, number[]>();
   const byCompact = new Map<string, number[]>();
   for (const p of people) {
-    const k = nameKey(p.name);
-    if (!k) continue;
-    byName.set(k, [...(byName.get(k) ?? []), p.id]);
-    if (k.includes(' ')) byCompact.set(compact(p.name), [...(byCompact.get(compact(p.name)) ?? []), p.id]);
+    for (const n of namesOf(p)) {
+      const k = nameKey(n);
+      byName.set(k, [...(byName.get(k) ?? []), p.id]);
+      if (k.includes(' ')) byCompact.set(compact(n), [...(byCompact.get(compact(n)) ?? []), p.id]);
+    }
   }
 
   // 1. Same email or phone (imports already merge most of these; this catches hand-made copies).
@@ -126,10 +145,12 @@ export function findDuplicates(people: DupPerson[], dismissed: Set<string> = new
   // 6. "jsmith" ↔ "John Smith": first initial + last name.
   const byInitial = new Map<string, number[]>();
   for (const p of people) {
-    const words = nameKey(p.name).split(' ');
-    if (words.length < 2 || words[words.length - 1].length < 3) continue;
-    const key = words[0][0] + words[words.length - 1];
-    byInitial.set(key, [...(byInitial.get(key) ?? []), p.id]);
+    const keys = new Set<string>();
+    for (const n of namesOf(p)) {
+      const words = nameKey(n).split(' ');
+      if (words.length >= 2 && words[words.length - 1].length >= 3) keys.add(words[0][0] + words[words.length - 1]);
+    }
+    for (const key of keys) byInitial.set(key, [...(byInitial.get(key) ?? []), p.id]);
   }
   for (const p of people) {
     for (const u of usernamesOf(p)) {
@@ -138,10 +159,14 @@ export function findDuplicates(people: DupPerson[], dismissed: Set<string> = new
     }
   }
 
+  // 7. An account vanished and a new one appeared with the same connection date.
+  const ids = new Set(people.map((p) => p.id));
+  for (const r of renamed) if (ids.has(r.a) && ids.has(r.b)) add(r.a, r.b, 'renamed', false);
+
   return [...out.values()].sort((x, y) => Number(y.strong) - Number(x.strong) || ORDER.indexOf(x.reason) - ORDER.indexOf(y.reason));
 }
 
-const ORDER: DupReason[] = ['same-contact', 'chat-name', 'username', 'same-name', 'suggested', 'initial'];
+const ORDER: DupReason[] = ['same-contact', 'chat-name', 'username', 'same-name', 'renamed', 'suggested', 'initial'];
 
 /**
  * Does a squashed username contain this squashed name as its own piece? Allows wrappers like

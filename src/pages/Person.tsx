@@ -36,14 +36,14 @@ import { describeScoreInfo, type ScoreInfo } from '@/lib/ranking';
 import { useQuery, useStore } from '@/lib/store';
 
 type Form = {
-  name: string; phone: string; email: string; bMonth: string; bDay: string; bYear: string; company: string; title: string; city: string;
+  name: string; nickname: string; phone: string; email: string; bMonth: string; bDay: string; bYear: string; company: string; title: string; city: string;
   how_met: string; met_on: string; notes: string; closeness: number; follow_up: string; last_contacted: string;
   priority: string | null; deal_value: string; next_step: string; next_step_on: string;
   circle: Circle | null; photo: string | null; tags: string[];
 };
 
 const EMPTY: Form = {
-  name: '', phone: '', email: '', bMonth: '', bDay: '', bYear: '', company: '', title: '', city: '', how_met: '', met_on: '',
+  name: '', nickname: '', phone: '', email: '', bMonth: '', bDay: '', bYear: '', company: '', title: '', city: '', how_met: '', met_on: '',
   notes: '', closeness: 0, follow_up: 'none', last_contacted: '', priority: null, deal_value: '', next_step: '', next_step_on: '',
   circle: null, photo: null, tags: [],
 };
@@ -55,7 +55,7 @@ function splitBirthday(b: string | null) {
 }
 
 const toForm = (p: Person): Form => ({
-  name: p.name, phone: p.phone ?? '', email: p.email ?? '', ...splitBirthday(p.birthday), company: p.company ?? '',
+  name: p.name, nickname: p.nickname ?? '', phone: p.phone ?? '', email: p.email ?? '', ...splitBirthday(p.birthday), company: p.company ?? '',
   title: p.title ?? '', city: p.city ?? '', how_met: p.how_met ?? '', met_on: p.met_on ?? '', notes: p.notes ?? '', closeness: p.closeness,
   follow_up: p.follow_up, last_contacted: p.last_contacted ?? '', priority: p.priority,
   deal_value: p.deal_value != null ? String(p.deal_value) : '', next_step: p.next_step ?? '', next_step_on: p.next_step_on ?? '',
@@ -141,7 +141,7 @@ export function PersonPage() {
     if (value !== null && Number.isNaN(value)) return setError('Deal value should be a number.');
     setError(null);
     const patch: PersonPatch = {
-      name: form.name.trim(), phone: blank(form.phone), email: blank(form.email), birthday: b,
+      name: form.name.trim(), nickname: blank(form.nickname), phone: blank(form.phone), email: blank(form.email), birthday: b,
       company: blank(form.company), title: blank(form.title), city: blank(form.city), how_met: blank(form.how_met), met_on: blank(form.met_on),
       notes: blank(form.notes), closeness: form.closeness, follow_up: form.follow_up, last_contacted: blank(form.last_contacted),
       priority: form.priority, deal_value: value, next_step: blank(form.next_step), next_step_on: blank(form.next_step_on),
@@ -296,6 +296,14 @@ export function PersonPage() {
         </div>
         <div className="grow">
           <input className="name-input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Name" aria-label="Name" autoFocus={isNew} />
+          <input
+            className="nickname-input"
+            value={form.nickname}
+            onChange={(e) => set('nickname', e.target.value)}
+            placeholder="Also goes by… (nickname, English or Chinese name)"
+            aria-label="Nickname or other name"
+            title="A nickname, or their other name: an English name next to a legal or Chinese name. Search and duplicate matching use it too."
+          />
           <div className="badges">
             {Object.entries(sourceLinks(sources, form.phone)).map(([s, href]) => <SourceIcon key={s} source={s} href={href} size={22} />)}
             {sources.filter((s) => s.handle && s.source !== 'instagram').map((s) =>

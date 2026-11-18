@@ -14,6 +14,7 @@ import { MergeForm, PersonMini } from './Duplicates';
 import { allCities, deletePeople, getSetting, setArchived, setCity, setSetting, setTags, unlinkedPeople } from '@/db/people';
 import { looksLikeOrganization } from '@/lib/orgs';
 import { useQuery, useStore } from '@/lib/store';
+import { EditControls } from '@/components/EditControls';
 
 type Filter = 'all' | 'reviewed' | 'todo' | 'archived';
 const FILTER_STATUS: Record<Filter, PersonStatus[]> = {
@@ -401,6 +402,7 @@ export function People() {
           + Add person
         </Link>
       </PageHead>
+      <EditControls />
       {unlinked && unlinked.length > 0 && (
         <section className="card pad row-gap chat-only">
           <span className="grow small">
@@ -566,7 +568,10 @@ export function People() {
               const person = (
                 <>
                   <Avatar name={r.name} photo={r.photo} size={36} />
-                  <span className="person-name">{r.name}</span>
+                  <span className="person-name">
+                    {r.name}
+                    {r.nickname && <span className="nickname"> ({r.nickname})</span>}
+                  </span>
                 </>
               );
               return (
