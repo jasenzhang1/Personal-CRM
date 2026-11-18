@@ -116,3 +116,18 @@ test('real names from Close Friends / follow requests become sure fixes', async 
   const list = await nameReviewList(db);
   assert.deepEqual(list.find((r) => r.name === 'kkwon_')!.suggestion, { name: 'Kevin Kwon', confidence: 'high', reason: 'chat' });
 });
+
+test('Grab picture bookmark: profile matching and message checks', async () => {
+  const { profileKey, isGrabMessage, grabberBookmarklet } = await import('../src/lib/grabber.ts');
+  assert.deepEqual(profileKey('https://www.instagram.com/Jane.Doe/?hl=en'), { source: 'instagram', id: 'jane.doe' });
+  assert.deepEqual(profileKey('https://www.linkedin.com/in/dee-lin-123/'), { source: 'linkedin', id: 'dee-lin-123' });
+  assert.equal(profileKey('https://www.linkedin.com/feed/'), null);
+  const msg = (origin: string, data: object) => ({ origin, data }) as MessageEvent;
+  const ok = { type: 'crm-photo', page: 'https://www.instagram.com/jane/', src: 'https://scontent.cdninstagram.com/x.jpg', data: 'data:image/jpeg;base64,AAAA' };
+  assert.ok(isGrabMessage(msg('https://www.instagram.com', ok)));
+  assert.ok(!isGrabMessage(msg('https://evil.example', ok)), 'other sites are ignored');
+  assert.ok(!isGrabMessage(msg('https://www.instagram.com', { ...ok, data: 'data:text/html;base64,AAAA' })), 'only images');
+  assert.ok(!isGrabMessage(msg('https://www.instagram.com', { ...ok, src: 'javascript:alert(1)' })), 'only https links');
+  const code = decodeURIComponent(grabberBookmarklet().slice('javascript:'.length));
+  assert.doesNotThrow(() => new Function(code), 'bookmark is valid JavaScript');
+});

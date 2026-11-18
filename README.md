@@ -90,6 +90,10 @@ The People page shows **📸 how many people have pictures and when pictures wer
 
 The rest come from the monthly photo round below.
 
+## Grab picture bookmark
+
+The fastest way to get Instagram and LinkedIn pictures. On the Photo round page, drag **📸 Grab picture** to your bookmarks bar once. Start the round, and on each profile it opens, click the bookmark. It reads the picture already on your screen (in your own signed-in browser), sends it to the CRM tab, which saves it to that person, and opens the next profile, about 2 seconds per person. Default silhouettes count as "no picture". Nothing runs unless you click it. It works on a computer (Chrome, Edge, Firefox).
+
 ## Monthly photo round
 
 Instagram, LinkedIn and Facebook exports never include other people's profile pictures, and automated scraping breaks LinkedIn's and Instagram's terms and risks your account. Instead, **📸 Photo round** (from Reminders) speeds up doing it by hand:

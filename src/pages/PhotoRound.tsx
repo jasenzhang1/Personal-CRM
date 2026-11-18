@@ -9,6 +9,7 @@ import { loadScores } from '@/db/ranking';
 import { lastPhotoRound, markPhotoChecked, needEmailPhoto, notePhotosUpdated, photoQueue, photoRoundIcs, photoStatus, PHOTO_ROUND_DAYS, type PhotoTodo } from '@/db/photos';
 import { formatDate } from '@/lib/dates';
 import { shrinkImage } from '@/lib/image';
+import { grabberBookmarklet, isGrabMessage, profileKey } from '@/lib/grabber';
 import { useQuery, useStore } from '@/lib/store';
 
 /** Every profile opens in this one tab, so tabs don't pile up during a round. */
@@ -128,6 +129,45 @@ export function PhotoRound() {
     }
   };
 
+  // Pictures sent by the "Grab picture" bookmark from the profile tab. We save it to whoever that
+  // profile belongs to and answer with the next profile, which the bookmark opens.
+  useEffect(() => {
+    if (!queue) return;
+    const onMessage = async (e: MessageEvent) => {
+      if (!isGrabMessage(e)) return;
+      const reply = (msg: { url?: string; message?: string }) => (e.source as Window | null)?.postMessage({ type: 'crm-next', ...msg }, e.origin);
+      const key = profileKey(e.data.page);
+      const matches = (p: PhotoTodo) => !!key && p.profiles.some((x) => x.source === key.source && profileKey(x.url)?.id === key.id);
+      let at = queue.findIndex((p, i) => i >= index && matches(p));
+      if (at < 0) at = queue.findIndex(matches);
+      if (at < 0) return reply({ message: 'This profile isn’t in your photo round. Open profiles from the Photo round so the picture goes to the right person.' });
+      const person = queue[at];
+      let photo: string | undefined;
+      try {
+        if (e.data.data) photo = await shrinkImage(e.data.data, 160);
+        else if (e.data.src) {
+          try {
+            photo = await shrinkImage(e.data.src, 160);
+          } catch {
+            photo = e.data.src; // the site didn't let us copy it; keep the link (refreshed next round)
+          }
+        }
+      } catch {
+        photo = undefined;
+      }
+      await markPhotoChecked(db, person.id, photo);
+      if (photo) setDone((d) => d + 1);
+      const n = at + 1;
+      setIndex(n);
+      setError(null);
+      bump();
+      const upcoming = queue[n];
+      reply(upcoming ? { url: upcoming.profiles[0].url } : { message: `All done! ${photo ? 'Saved ' + person.name + '’s picture. ' : ''}That’s everyone in this round 🎉` });
+    };
+    addEventListener('message', onMessage);
+    return () => removeEventListener('message', onMessage);
+  }, [queue, index, db, bump]);
+
   // Ctrl+V anywhere on the page saves the picture for the current person.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -180,7 +220,7 @@ export function PhotoRound() {
             <strong>Fetch automatically</strong>
             <span className="block small muted">
               Gravatar (the profile picture people set up through WordPress, GitHub, Slack and others; checked using a scrambled version of their email)
-              {googleId ? ' and your Google contacts’ photos' : ''}. Instagram and LinkedIn don’t allow this, so those are done by hand below.
+              {googleId ? ' and your Google contacts’ photos' : ''}. Instagram and LinkedIn don’t allow automatic fetching, so for those use the 📸 Grab picture bookmark below.
             </span>
           </span>
           <button type="button" className="btn primary" disabled={!!fetching} onClick={() => fetchAll(true)}>
@@ -207,7 +247,8 @@ export function PhotoRound() {
         )}
       </section>
 
-      <h2 className="section-title">From Instagram & LinkedIn, by hand</h2>
+      <h2 className="section-title">From Instagram & LinkedIn</h2>
+      <GrabberSetup />
       <div className="row-gap">
         <label className="check">
           <input type="checkbox" checked={refresh} onChange={(e) => setRefresh(e.target.checked)} />
@@ -248,7 +289,7 @@ export function PhotoRound() {
             </div>
           </div>
           <ol className="steps">
-            <li>Open their profile (button above, or press Enter).</li>
+            <li>Open their profile (button above, or press Enter). With the 📸 Grab picture bookmark, just click it on their profile: it saves the picture and opens the next person. Or by hand:</li>
             <li>Right-click their profile picture → <strong>Copy image</strong>.</li>
             <li>
               Come back here and press <kbd>Ctrl</kbd>+<kbd>V</kbd>. The next person comes up{autoOpen ? ' and their profile opens' : ''}.
@@ -295,5 +336,31 @@ export function PhotoRound() {
         </section>
       )}
     </div>
+  );
+}
+
+/** One-time setup for the bookmark, with a button you drag to the bookmarks bar. */
+function GrabberSetup() {
+  const link = useRef<HTMLAnchorElement>(null);
+  // React won't render javascript: links, so set it directly.
+  useEffect(() => {
+    link.current?.setAttribute('href', grabberBookmarklet());
+  }, []);
+  return (
+    <section className="card pad grabber">
+      <div className="row-gap">
+        <a ref={link} className="btn primary grab-link" onClick={(e) => e.preventDefault()} draggable title="Drag me to your bookmarks bar">
+          📸 Grab picture
+        </a>
+        <span className="small grow">
+          <strong>Fastest way: drag this button to your bookmarks bar</strong> (press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> if you don’t see the bar). Then start the round, and on each
+          Instagram or LinkedIn profile just click the bookmark. It saves their picture here and jumps to the next person, about 2 seconds each.
+        </span>
+      </div>
+      <p className="small muted">
+        It only reads the picture already on your screen, in your own signed-in browser, so it’s the same as looking at the profile yourself. Nothing runs on its own. Works in
+        Chrome, Edge and Firefox on a computer.
+      </p>
+    </section>
   );
 }
