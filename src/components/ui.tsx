@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Person } from '@/db/people';
+import { ReadOnlyError } from '@/db/browser';
+import { useStore } from '@/lib/store';
 
 export function Avatar({ name, photo, size = 40 }: { name: string; photo?: string | null; size?: number }) {
   const initials = name
@@ -114,33 +116,59 @@ export function ScoreBadge({ score, rank, title, guess }: { score: number; rank?
   );
 }
 
-/** A score you can click to type a new one (0–10). Enter or clicking away saves, Escape cancels. */
+/**
+ * A score you can click to type a new one (0–10). Enter or clicking away saves, Escape cancels.
+ * If Edit mode is off, the number you typed stays put with a button to turn it on and save.
+ */
 export function EditableScore({ score, title, guess, onSave }: { score: number; title?: string; guess?: boolean; onSave: (score: number) => void | Promise<void> }) {
+  const { beginEdit } = useStore();
   const [draft, setDraft] = useState<string | null>(null);
+  const [locked, setLocked] = useState<number | null>(null);
+  const [saved, setSaved] = useState<number | null>(null);
   const done = useRef(false);
+  // Show what you typed until the reloaded score arrives.
+  useEffect(() => setSaved(null), [score]);
+
+  const save = async (n: number) => {
+    try {
+      await onSave(n);
+      setLocked(null);
+      setSaved(n);
+    } catch (e) {
+      if (!(e instanceof ReadOnlyError)) throw e;
+      setLocked(n);
+    }
+  };
   const commit = async () => {
     if (done.current || draft === null) return;
     done.current = true;
     const n = Number(draft.replace(',', '.'));
     setDraft(null);
-    if (draft.trim() !== '' && Number.isFinite(n) && Math.abs(n - score) >= 0.005) await onSave(Math.max(0, Math.min(10, n)));
+    if (draft.trim() !== '' && Number.isFinite(n) && Math.abs(n - score) >= 0.005) await save(Math.round(Math.max(0, Math.min(10, n)) * 100) / 100);
   };
+
   if (draft !== null)
     return (
       <input
         className="input score-input"
         type="number"
+        inputMode="decimal"
         min={0}
         max={10}
         step={0.1}
         autoFocus
+        draggable={false}
         value={draft}
         aria-label="Closeness score, 0 to 10"
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
+        onDragStart={(e) => e.preventDefault()}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
+          if (e.key === 'Enter') {
+            e.preventDefault(); // on a profile, Enter would otherwise submit the whole form
+            commit();
+          }
           if (e.key === 'Escape') {
             done.current = true;
             setDraft(null);
@@ -148,6 +176,26 @@ export function EditableScore({ score, title, guess, onSave }: { score: number; 
         }}
       />
     );
+  if (locked !== null)
+    return (
+      <span className="score-locked" role="alert">
+        <ScoreBadge score={locked} />
+        <button
+          type="button"
+          className="btn primary small"
+          onClick={async () => {
+            beginEdit();
+            await save(locked);
+          }}
+        >
+          Turn on Edit mode &amp; save
+        </button>
+        <button type="button" className="btn ghost small" onClick={() => setLocked(null)} aria-label="Cancel">
+          ✕
+        </button>
+      </span>
+    );
+  const shown = saved ?? score;
   return (
     <button
       type="button"
@@ -155,10 +203,10 @@ export function EditableScore({ score, title, guess, onSave }: { score: number; 
       title={`${title ? `${title}\n` : ''}Click to set the score yourself`}
       onClick={() => {
         done.current = false;
-        setDraft(score.toFixed(1));
+        setDraft(shown.toFixed(1));
       }}
     >
-      <ScoreBadge score={score} guess={guess} />
+      <ScoreBadge score={shown} guess={guess && saved === null} />
     </button>
   );
 }
