@@ -3,11 +3,12 @@
  *
  * - Everyone starts with an **estimate** from how much you talk (messages, calls, hangouts),
  *   so the list is already roughly in order on day one.
- * - The comparison game ("who are you closer to?") **places** one person at a time with a
- *   binary search against everyone else. Their new score sits between the two people they
- *   landed between, so the list order and the scores always agree.
+ * - The comparison game ("who are you closer to?") builds a **web** of answers between many
+ *   different people. Scores are fitted to all answers at once (see fitWeb), so one answer can
+ *   move people you never compared directly. Answers that go in a circle are caught (findCycle)
+ *   and asked again.
  * - After that, a placed score keeps **drifting** with activity: talk a lot more than when you
- *   placed them and it rises; go quiet and it falls. The game re-asks whoever moved the most.
+ *   last compared them and it rises; go quiet and it falls.
  * - "Not close anymore" drops someone straight to 0.
  */
 import { daysBetween, parseIsoDate } from './dates';
@@ -106,70 +107,148 @@ export function describeScoreInfo(s: ScoreInfo): string {
   return parts.join(' · ');
 }
 
-/* ---------------- the comparison game ---------------- */
-
-export interface Placement {
-  personId: number;
-  /** Everyone else with a score, closest first. */
-  others: { id: number; score: number }[];
-  lo: number;
-  hi: number;
-  /** Set when you answered "about the same": they take that person's score. */
-  tieScore?: number;
-}
-
-export const startPlacement = (personId: number, others: { id: number; score: number }[]): Placement => {
-  const list = others.filter((o) => o.id !== personId);
-  return { personId, others: list, lo: 0, hi: list.length };
-};
-
-/** Who to compare against next, or null when the spot is found. */
-export const nextOpponent = (p: Placement): number | null => (p.lo >= p.hi ? null : p.others[Math.floor((p.lo + p.hi) / 2)].id);
-
-export function answerPlacement(p: Placement, answer: 'new' | 'other' | 'tie'): Placement {
-  const mid = Math.floor((p.lo + p.hi) / 2);
-  if (answer === 'new') return { ...p, hi: mid };
-  if (answer === 'other') return { ...p, lo: mid + 1 };
-  return { ...p, lo: mid + 1, hi: mid + 1, tieScore: p.others[mid].score };
-}
+/* ---------------- the comparison web ---------------- */
 
 /**
- * Score for where they landed: halfway between the person above and the person below. Closer
- * than everyone means near the top of the scale (most of the way to 10); less close than
- * everyone means half of the lowest score.
+ * One answer to "who are you closer to?", stored once per pair (a < b); answering the same pair
+ * again replaces it. 'a' / 'b' = that one is closer, 'tie' = about the same.
  */
-export function placedScore(p: Placement): number {
-  if (p.tieScore !== undefined) return p.tieScore;
-  const below = p.others[p.lo]?.score ?? 0;
-  if (p.lo === 0) return round2(10 - (10 - below) * 0.25);
-  return round2((p.others[p.lo - 1].score + below) / 2);
+export type CompResult = 'a' | 'b' | 'tie';
+export interface Comparison {
+  a: number;
+  b: number;
+  result: CompResult;
 }
 
-/** Rough number of questions left, for a progress hint. */
-export const questionsLeft = (p: Placement) => (p.hi > p.lo ? Math.ceil(Math.log2(p.hi - p.lo + 1)) : 0);
+export const pairKey = (x: number, y: number) => (x < y ? `${x}:${y}` : `${y}:${x}`);
+
+/** A comparison from x's point of view: did x win, lose or tie against y? */
+export function normalizeComparison(x: number, y: number, outcome: 'x' | 'y' | 'tie'): Comparison {
+  const [a, b] = x < y ? [x, y] : [y, x];
+  const result: CompResult = outcome === 'tie' ? 'tie' : (outcome === 'x') === (x === a) ? 'a' : 'b';
+  return { a, b, result };
+}
+
+/** How strongly answers pull scores apart vs. how strongly each person stays near their starting guess. */
+const FIT = { k: 1, prior: 0.08, tie: 0.3 };
 
 /**
- * Who the game should ask about next. Unplaced people with high estimates come first (they
- * matter most), then placed people whose score has drifted, then whoever you placed longest ago.
+ * Scores from every answer at once (a Bradley–Terry fit on the 0–10 scale). Each person starts
+ * at `priors` (their guess from activity, or an earlier placement); each "closer to A than B"
+ * pulls A up and B down until the scores agree with your answers, each "about the same" pulls
+ * the two together. One answer is enough to flip two people's order; contradictory answers
+ * settle in between. Only people in `comparisons` are returned.
  */
-export function nextToPlace(scores: Map<number, ScoreInfo>, skip: Set<number>, today = new Date()): number | null {
-  let best: number | null = null;
-  let bestP = -Infinity;
-  for (const [id, s] of scores) {
-    if (skip.has(id) || s.score <= 0) continue;
-    let p: number;
-    if (!s.placed) p = 2 + s.score;
-    else {
-      const d = s.rankedAt ? parseIsoDate(s.rankedAt.slice(0, 10)) : null;
-      const age = d ? Math.max(0, daysBetween(d, today)) : 365;
-      p = Math.abs(s.drift) * 3 + Math.min(age / 30, 3) - 1;
+export function fitWeb(priors: Map<number, number>, comparisons: Comparison[], iterations = 300): Map<number, number> {
+  const s = new Map<number, number>();
+  const prior = (id: number) => priors.get(id) ?? 0;
+  for (const c of comparisons) for (const id of [c.a, c.b]) if (!s.has(id)) s.set(id, prior(id));
+  // Diagonal (Newton-style) step size per person, so busy people don't overshoot.
+  const curve = new Map<number, number>();
+  for (const id of s.keys()) curve.set(id, 2 * FIT.prior);
+  for (const c of comparisons)
+    for (const id of [c.a, c.b]) curve.set(id, curve.get(id)! + (c.result === 'tie' ? 2 * FIT.tie : (FIT.k * FIT.k) / 4));
+  for (let it = 0; it < iterations; it++) {
+    const g = new Map<number, number>();
+    for (const [id, v] of s) g.set(id, 2 * FIT.prior * (v - prior(id)));
+    for (const c of comparisons) {
+      const d = s.get(c.a)! - s.get(c.b)!;
+      if (c.result === 'tie') {
+        g.set(c.a, g.get(c.a)! + 2 * FIT.tie * d);
+        g.set(c.b, g.get(c.b)! - 2 * FIT.tie * d);
+        continue;
+      }
+      const [w, l] = c.result === 'a' ? [c.a, c.b] : [c.b, c.a];
+      const push = FIT.k * (1 - 1 / (1 + Math.exp(-FIT.k * (s.get(w)! - s.get(l)!))));
+      g.set(w, g.get(w)! - push);
+      g.set(l, g.get(l)! + push);
     }
-    if (p > bestP) {
-      bestP = p;
-      best = id;
-    }
+    for (const [id, v] of s) s.set(id, clamp(v - (0.8 * g.get(id)!) / curve.get(id)!));
   }
-  return best;
+  for (const [id, v] of s) s.set(id, round2(v));
+  return s;
+}
+
+/**
+ * After you said `winner` over `loser`: do your answers now go in a circle (A over B, B over C,
+ * C over A)? Returns the shortest such loop, starting [winner, loser, …], where each person is
+ * closer than the next and the last is closer than the first. Null when everything lines up.
+ */
+export function findCycle(comparisons: Comparison[], winner: number, loser: number, maxLength = 5): number[] | null {
+  const beats = new Map<number, number[]>();
+  for (const c of comparisons) {
+    if (c.result === 'tie') continue;
+    const [w, l] = c.result === 'a' ? [c.a, c.b] : [c.b, c.a];
+    beats.set(w, [...(beats.get(w) ?? []), l]);
+  }
+  // Breadth-first from the loser: is there a chain of "closer than" back to the winner?
+  const prev = new Map<number, number>([[loser, loser]]);
+  let frontier = [loser];
+  for (let depth = 1; depth < maxLength && frontier.length; depth++) {
+    const next: number[] = [];
+    for (const x of frontier)
+      for (const y of beats.get(x) ?? []) {
+        if (prev.has(y)) continue;
+        prev.set(y, x);
+        if (y === winner) {
+          const path = [winner];
+          for (let at = x; at !== loser; at = prev.get(at)!) path.push(at);
+          path.push(loser);
+          return [winner, ...path.slice(1).reverse()];
+        }
+        next.push(y);
+      }
+    frontier = next;
+  }
+  return null;
+}
+
+/** Consecutive pairs of a loop, including last → first. */
+export const cyclePairs = (cycle: number[]): [number, number][] => cycle.map((id, i) => [id, cycle[(i + 1) % cycle.length]]);
+
+export interface WebCandidate {
+  id: number;
+  score: number;
+  /** How many answers they're already in. */
+  n: number;
+}
+
+/**
+ * The next pair to ask about. Mixes widely: the first person is drawn at random, favouring
+ * people you've compared least; the second is usually someone at a similar level (so the answer
+ * says something), sometimes anyone at all, and never someone you just saw or a pair you've
+ * already answered (unless there's no one else). With `focus`, that person is always in it and
+ * opponents close in on their level as `focusAsked` grows.
+ */
+export function pickPair(
+  cands: WebCandidate[],
+  opts: { asked: Set<string>; recent: number[]; focus?: number; focusAsked?: number; rng?: () => number },
+): [number, number] | null {
+  const rng = opts.rng ?? Math.random;
+  if (cands.length < 2) return null;
+  const recent = new Set(opts.recent);
+  const draw = <T>(items: T[], weight: (t: T) => number): T | undefined => {
+    const ws = items.map(weight);
+    let r = rng() * ws.reduce((x, y) => x + y, 0);
+    for (let i = 0; i < items.length; i++) if ((r -= ws[i]) <= 0) return items[i];
+    return items[items.length - 1];
+  };
+  const fresh = cands.filter((c) => !recent.has(c.id));
+  const first =
+    opts.focus !== undefined
+      ? cands.find((c) => c.id === opts.focus)
+      : draw(fresh.length ? fresh : cands, (c) => (0.3 + c.score / 10) / (1 + c.n));
+  if (!first) return null;
+  const others = cands.filter((c) => c.id !== first.id);
+  const unasked = others.filter((c) => !opts.asked.has(pairKey(first.id, c.id)));
+  const pool = [unasked.filter((c) => !recent.has(c.id)), unasked, others].find((l) => l.length)!;
+  const spread = opts.focus !== undefined ? Math.max(0.8, 3 - 0.4 * (opts.focusAsked ?? 0)) : 2;
+  const second =
+    rng() < (opts.focus !== undefined ? 0.15 : 0.3)
+      ? pool[Math.floor(rng() * pool.length)]
+      : draw(pool, (c) => Math.exp(-Math.abs(c.score - first.score) / spread) / Math.sqrt(1 + c.n));
+  if (!second) return null;
+  return rng() < 0.5 ? [first.id, second.id] : [second.id, first.id];
 }
 
 /** Stored scores keep two decimals so many people can fit between two others. */

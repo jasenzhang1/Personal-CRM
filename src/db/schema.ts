@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -190,6 +190,23 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
   if (current < 12) {
     // What else they go by: a nickname, or an English name next to a legal/Chinese name ("David" for Wei Zhang).
     await addColumn(db, 'people', 'nickname', 'TEXT');
+  }
+
+  if (current < 13) {
+    await db.execAsync(`
+      -- Every "who are you closer to?" answer, one row per pair (a < b). Answering again replaces it.
+      CREATE TABLE IF NOT EXISTS comparisons (
+        a INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        b INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        result TEXT NOT NULL,             -- a | b | tie (who is closer)
+        at TEXT NOT NULL,
+        PRIMARY KEY (a, b)
+      );
+      CREATE INDEX IF NOT EXISTS comparisons_b ON comparisons(b);
+    `);
+    // Where someone started before any answers (their activity guess, or an old placement). Scores are refitted from here.
+    await addColumn(db, 'rankings', 'prior', 'REAL');
+    await db.execAsync('UPDATE rankings SET prior = base WHERE prior IS NULL');
   }
 
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);

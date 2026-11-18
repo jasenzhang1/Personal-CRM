@@ -1,6 +1,16 @@
 import type { SQLiteDatabase } from './types';
 import { isoDate } from '@/lib/dates';
-import { activityScore, assignRanks, scoreInfo, type ActivityDay, type RankedRow, type ScoreInfo } from '@/lib/ranking';
+import {
+  activityScore,
+  assignRanks,
+  fitWeb,
+  normalizeComparison,
+  scoreInfo,
+  type ActivityDay,
+  type Comparison,
+  type RankedRow,
+  type ScoreInfo,
+} from '@/lib/ranking';
 
 const now = () => new Date().toISOString();
 
@@ -8,18 +18,76 @@ export function listRanking(db: SQLiteDatabase) {
   return db.getAllAsync<RankedRow>('SELECT * FROM rankings');
 }
 
-/** Save where the game placed someone: their new score, and their activity right now. */
+/**
+ * Set someone's score directly, with their activity right now. 0 ("not close anymore") also
+ * forgets their comparisons, so old answers don't lift them back up.
+ */
 export async function setPlacement(db: SQLiteDatabase, personId: number, score: number, activity: number) {
   await db.runAsync(
-    `INSERT INTO rankings (person_id, base, act_at, ranked_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT (person_id) DO UPDATE SET base = excluded.base, act_at = excluded.act_at, ranked_at = excluded.ranked_at`,
-    personId, score, activity, now(),
+    `INSERT INTO rankings (person_id, base, act_at, ranked_at, prior) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (person_id) DO UPDATE SET base = excluded.base, act_at = excluded.act_at, ranked_at = excluded.ranked_at, prior = excluded.prior`,
+    personId, score, activity, now(), score,
   );
+  if (score === 0) await db.runAsync('DELETE FROM comparisons WHERE a = ? OR b = ?', personId, personId);
 }
 
-/** Forget a placement: they go back to an estimate from activity. */
+/** Forget a placement and their comparisons: they go back to an estimate from activity. */
 export async function removeRanking(db: SQLiteDatabase, personId: number) {
   await db.runAsync('DELETE FROM rankings WHERE person_id = ?', personId);
+  await db.runAsync('DELETE FROM comparisons WHERE a = ? OR b = ?', personId, personId);
+}
+
+/* ---------------- the comparison web ---------------- */
+
+export function listComparisons(db: SQLiteDatabase) {
+  return db.getAllAsync<Comparison>('SELECT a, b, result FROM comparisons');
+}
+
+/** Save one answer (from x's point of view). Answering the same pair again replaces the old answer. */
+export async function recordComparison(db: SQLiteDatabase, x: number, y: number, outcome: 'x' | 'y' | 'tie'): Promise<Comparison> {
+  const c = normalizeComparison(x, y, outcome);
+  await db.runAsync(
+    `INSERT INTO comparisons (a, b, result, at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (a, b) DO UPDATE SET result = excluded.result, at = excluded.at`,
+    c.a, c.b, c.result, now(),
+  );
+  return c;
+}
+
+/**
+ * Refit everyone in the web from all answers and save their scores. `scores` gives each
+ * person's current score and activity: someone entering the web for the first time starts from
+ * their current (guessed) score. `touched` are the people in the answer just given: their
+ * activity is re-measured from now, like a fresh placement. Returns the saved rows.
+ */
+export async function refitWeb(db: SQLiteDatabase, scores: Map<number, ScoreInfo>, touched: number[]): Promise<Map<number, RankedRow>> {
+  const comparisons = await listComparisons(db);
+  const rows = new Map((await db.getAllAsync<RankedRow & { prior: number | null }>('SELECT * FROM rankings')).map((r) => [r.person_id, r]));
+  const priors = new Map<number, number>();
+  for (const c of comparisons)
+    for (const id of [c.a, c.b]) {
+      const r = rows.get(id);
+      priors.set(id, r ? (r.prior ?? r.base) : (scores.get(id)?.score ?? 0));
+    }
+  const fitted = fitWeb(priors, comparisons);
+  const t = now();
+  const out = new Map<number, RankedRow>();
+  await db.withTransactionAsync(async () => {
+    for (const [id, base] of fitted) {
+      const r = rows.get(id);
+      const activity = scores.get(id)?.activity ?? 0;
+      const fresh = !r || touched.includes(id);
+      const row: RankedRow = { person_id: id, base, act_at: fresh ? activity : r.act_at, ranked_at: fresh ? t : r.ranked_at };
+      if (r && r.base === base && !fresh) continue;
+      await db.runAsync(
+        `INSERT INTO rankings (person_id, base, act_at, ranked_at, prior) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (person_id) DO UPDATE SET base = excluded.base, act_at = excluded.act_at, ranked_at = excluded.ranked_at`,
+        id, base, row.act_at, row.ranked_at, priors.get(id)!,
+      );
+      out.set(id, row);
+    }
+  });
+  return out;
 }
 
 /* ---------------- activity ---------------- */

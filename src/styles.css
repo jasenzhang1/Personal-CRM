@@ -650,3 +650,4 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
   .cal-count { font-size: 12px; }
 }
 .cal-head .btn.ghost { font-size: 20px; line-height: 1; padding: 4px 12px; }
+.names-tools .input[type="search"] { min-width: 0; flex: 1 1 220px; }

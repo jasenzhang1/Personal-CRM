@@ -1,8 +1,11 @@
 /**
  * Where to open someone's profile for each place they came from, when the export gave us enough
  * to build a link. Facebook's friends export has names only (no profile link or id), so Facebook
- * opens a search for their name instead.
+ * opens a search for their name until facebook_friend_links.json (lib/fbFriendLinks) gives their
+ * real profile link, kept as the handle.
  */
+const isFacebookUrl = (h: string) => /^https:\/\/www\.facebook\.com\//.test(h);
+
 export function profileUrl(source: string, externalId: string, handle: string | null, phone?: string | null): string | null {
   if (externalId.startsWith('chat:')) return null; // a chat, not an account
   const h = handle?.trim() ?? '';
@@ -14,6 +17,7 @@ export function profileUrl(source: string, externalId: string, handle: string | 
     case 'linkedin':
       return /^https?:\/\/(www\.)?linkedin\.com\//i.test(h) ? h : /^https?:\/\/(www\.)?linkedin\.com\//i.test(externalId) ? externalId : null;
     case 'facebook':
+      if (isFacebookUrl(h)) return h;
       return externalId.startsWith('fb-contacts:') ? null : `https://www.facebook.com/search/people/?q=${encodeURIComponent(externalId)}`;
     case 'discord':
       return /^\d{5,}$/.test(externalId) ? `https://discord.com/users/${externalId}` : null;
@@ -32,7 +36,9 @@ export function profileUrl(source: string, externalId: string, handle: string | 
 /** One link per source (the first one that has a link), for a person's source rows. */
 export function sourceLinks(rows: { source: string; external_id: string; handle: string | null }[], phone?: string | null): Record<string, string | null> {
   const out: Record<string, string | null> = {};
-  for (const r of rows) {
+  // A real Facebook profile link beats a name search, whichever row it's on.
+  const ordered = [...rows].sort((a, b) => Number(isFacebookUrl(b.handle ?? '')) - Number(isFacebookUrl(a.handle ?? '')));
+  for (const r of ordered) {
     if (out[r.source]) continue;
     out[r.source] = profileUrl(r.source, r.external_id, r.handle, phone) ?? out[r.source] ?? null;
   }

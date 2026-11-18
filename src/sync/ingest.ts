@@ -153,7 +153,8 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
     const dated = candidates.filter((c) => c.connectedOn);
     for (const c of dated)
       await db.runAsync('UPDATE sources SET connected_on = ? WHERE source = ? AND external_id = ? AND connected_on IS NULL', c.connectedOn!, source, c.externalId);
-    if (source === 'linkedin' || source === 'facebook') result.maybeRenamed = await spotRenames(db, source, candidates, knownRows, fresh, t);
+    // Needs connection dates: the Facebook friend-links file has none, so it skips this.
+    if ((source === 'linkedin' || source === 'facebook') && dated.length) result.maybeRenamed = await spotRenames(db, source, candidates, knownRows, fresh, t);
     if (baseline) await setSetting(db, baselineKey, t);
     await setSetting(db, `last_sync_${source}`, t);
   });

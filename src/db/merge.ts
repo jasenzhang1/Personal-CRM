@@ -98,6 +98,17 @@ export async function mergePeople(db: SQLiteDatabase, keepId: number, dropId: nu
       await db.runAsync('UPDATE rankings SET person_id = ? WHERE person_id = ?', keepId, dropId);
     }
     for (const t of ['person_tags', 'interactions', 'rankings']) await db.runAsync(`DELETE FROM ${t} WHERE person_id = ?`, dropId);
+    // Comparisons move over (re-keyed so a < b); where both had answered the same third person, the kept one's answer stays.
+    const comps = await db.getAllAsync<{ a: number; b: number; result: string; at: string }>('SELECT * FROM comparisons WHERE a = ? OR b = ?', dropId, dropId);
+    await db.runAsync('DELETE FROM comparisons WHERE a = ? OR b = ?', dropId, dropId);
+    for (const c of comps) {
+      const other = c.a === dropId ? c.b : c.a;
+      if (other === keepId) continue; // they were compared with each other
+      const dropWon = c.result === 'tie' ? null : (c.result === 'a') === (c.a === dropId);
+      const [a, b] = keepId < other ? [keepId, other] : [other, keepId];
+      const result = dropWon === null ? 'tie' : dropWon === (a === keepId) ? 'a' : 'b';
+      await db.runAsync('INSERT OR IGNORE INTO comparisons (a, b, result, at) VALUES (?, ?, ?, ?)', a, b, result, c.at);
+    }
     await db.runAsync('DELETE FROM not_duplicates WHERE a = ? OR b = ?', dropId, dropId);
     await db.runAsync('DELETE FROM people WHERE id = ?', dropId);
   });

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { fbLinksBookmarklet } from '@/lib/fbFriendLinks';
 import { Link, useSearchParams } from 'react-router';
 import { cloud, useCloud } from '@/lib/cloud';
 import { applyNameSuggestions, AUTO_NAMES_KEY, nameReviewList } from '@/db/names';
@@ -34,6 +35,91 @@ type FileSource = {
   /** Troubleshooting, collapsed by default. */
   help?: { title: string; items: { q: string; a: string[] }[] };
 };
+
+/**
+ * Facebook's export has names only. This card explains the bookmark that, clicked on your friends
+ * page, saves each friend's real profile link to facebook_friend_links.json for importing here.
+ */
+function FacebookLinksCard() {
+  const { db } = useStore();
+  const link = useRef<HTMLAnchorElement>(null);
+  // React won't render javascript: links, so set it directly.
+  useEffect(() => {
+    link.current?.setAttribute('href', fbLinksBookmarklet());
+  }, []);
+  const counts = useQuery(() =>
+    db.getFirstAsync<{ friends: number; linked: number }>(
+      `SELECT COUNT(DISTINCT person_id) AS friends,
+              COUNT(DISTINCT CASE WHEN handle LIKE 'https://www.facebook.com/%' THEN person_id END) AS linked
+       FROM sources WHERE source = 'facebook' AND external_id NOT LIKE 'fb-contacts:%'`,
+    ),
+  );
+  return (
+    <section className="card pad source-card">
+      <header className="source-head">
+        <SourceBadge source="facebook" />
+        <h3 className="card-title grow">Facebook profile links</h3>
+      </header>
+      <span className="muted small">
+        {counts && counts.friends
+          ? `${counts.linked} of ${counts.friends} Facebook friends have their profile link`
+          : 'Not imported yet'}
+      </span>
+      <p className="small">
+        Facebook’s export only lists names, so their Facebook icon searches by name. This gets each friend’s real profile link
+        from your friends page instead. Do it on a computer, in Chrome, Edge or Firefox.
+      </p>
+      <h4 className="steps-title">Once: add the bookmark</h4>
+      <ol className="steps">
+        <li>
+          Show your bookmarks bar: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> on a Mac).
+        </li>
+        <li>
+          Drag this button onto the bar:{' '}
+          <a ref={link} className="btn secondary small" onClick={(e) => e.preventDefault()} draggable title="Drag me to your bookmarks bar">
+            🔗 Save Facebook friend links
+          </a>
+          {' '}(clicking it here does nothing).
+        </li>
+      </ol>
+      <h4 className="steps-title">Each time: save and import the links</h4>
+      <a className="btn secondary block" href="https://www.facebook.com/me/friends" target="_blank" rel="noreferrer">
+        Open your Facebook friends list ↗
+      </a>
+      <ol className="steps">
+        <li>Sign in to Facebook if it asks. You should see your profile’s Friends tab with “All friends”.</li>
+        <li>Click 🔗 Save Facebook friend links on your bookmarks bar.</li>
+        <li>A box in the bottom-right corner counts your friends while the page scrolls by itself. Leave the tab open until it finishes (about a minute per few hundred friends).</li>
+        <li>It downloads facebook_friend_links.json to your Downloads folder.</li>
+        <li>Come back here and drop that file in the box above (or click it and pick the file).</li>
+        <li>Friends you already have get their real link, so their Facebook icon opens their profile. Do the regular Facebook export first, so people are matched with their friend dates.</li>
+      </ol>
+      <details className="help">
+        <summary>Not working?</summary>
+        <div className="help-item">
+          <strong className="small">Nothing happens when I click the bookmark</strong>
+          <ul className="steps">
+            <li>Make sure you’re on facebook.com (not the app) and the page has finished loading, then click it again.</li>
+            <li>If it opened your friends list for you, wait for it to load and click the bookmark once more.</li>
+          </ul>
+        </div>
+        <div className="help-item">
+          <strong className="small">It stopped early or found 0 friends</strong>
+          <ul className="steps">
+            <li>Open your profile → Friends → All friends, scroll down a little yourself, then click the bookmark again.</li>
+            <li>Still 0? Facebook may have changed its page layout, and the bookmark needs updating to match.</li>
+          </ul>
+        </div>
+        <div className="help-item">
+          <strong className="small">Some people still search by name</strong>
+          <ul className="steps">
+            <li>Their name on Facebook changed since your export, or two friends share the exact same name. Run the regular Facebook export again, then this.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+  );
+}
 
 const FILE_SOURCES: FileSource[] = [
   {
@@ -127,6 +213,7 @@ const FILE_SOURCES: FileSource[] = [
       'Tick Friends (and Messages, for chat and call counts). Optional: Personal information, for the phone contacts you once uploaded.',
       'Date range: All time. Format: JSON if you can (HTML works too). Create files.',
       'When it’s ready, download the .zip and drop it here.',
+      'This export has names only, no profile links. To get their links, also do “Facebook profile links” (the next card).',
     ],
   },
   {
@@ -399,7 +486,7 @@ export function Sync() {
       />
 
       <div className="howto-grid">
-        {FILE_SOURCES.map((s) => (
+        {FILE_SOURCES.flatMap((s) => [
           <section key={s.key} className="card pad source-card">
             <header className="source-head">
               <SourceBadge source={s.key} />
@@ -450,8 +537,9 @@ export function Sync() {
             <p className="muted small">
               Wait: {s.wait}. Then drop {s.drop} in the box above.
             </p>
-          </section>
-        ))}
+          </section>,
+          ...(s.key === 'facebook' ? [<FacebookLinksCard key="facebook-links" />] : []),
+        ])}
       </div>
 
       <section className="card pad">
