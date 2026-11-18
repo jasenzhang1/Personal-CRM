@@ -286,3 +286,25 @@ test('Discord DMs match friends by user id; server channels ignored', async () =
   assert.deepEqual([r.matched, r.skipped], [1, 1]);
   assert.equal((await activitySummary(db, f)).messagesAll, 2);
 });
+
+test('setting a score by hand sticks exactly, and forgets old comparisons so a refit cannot undo it', async () => {
+  const { recordComparison, refitWeb, listComparisons, setScoreByHand } = await import('../src/db/ranking.ts');
+  const db = fakeDb();
+  await migrate(db);
+  const [a, b, c] = [await createPerson(db, { name: 'A' }), await createPerson(db, { name: 'B' }), await createPerson(db, { name: 'C' })];
+  const people = [a, b, c].map((id) => ({ id, closeness: 0, last_contacted: null }));
+  await setPlacement(db, a, 5, 0);
+  await setPlacement(db, b, 5, 0);
+  await setPlacement(db, c, 5, 0);
+  let s = await loadScores(db, people);
+  await recordComparison(db, a, b, 'x');
+  await recordComparison(db, b, c, 'x');
+  await refitWeb(db, s, [a, b, c]);
+  await setScoreByHand(db, b, 9.25, 0);
+  assert.deepEqual((await listComparisons(db)).length, 0, "B's answers are forgotten");
+  s = await loadScores(db, people);
+  assert.equal(s.get(b)!.score, 9.25);
+  assert.ok(s.get(b)!.placed);
+  await setScoreByHand(db, c, 14, 0);
+  assert.equal((await loadScores(db, people)).get(c)!.score, 10, 'clamped to 10');
+});

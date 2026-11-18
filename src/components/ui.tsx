@@ -114,6 +114,55 @@ export function ScoreBadge({ score, rank, title, guess }: { score: number; rank?
   );
 }
 
+/** A score you can click to type a new one (0–10). Enter or clicking away saves, Escape cancels. */
+export function EditableScore({ score, title, guess, onSave }: { score: number; title?: string; guess?: boolean; onSave: (score: number) => void | Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const done = useRef(false);
+  const commit = async () => {
+    if (done.current || draft === null) return;
+    done.current = true;
+    const n = Number(draft.replace(',', '.'));
+    setDraft(null);
+    if (draft.trim() !== '' && Number.isFinite(n) && Math.abs(n - score) >= 0.005) await onSave(Math.max(0, Math.min(10, n)));
+  };
+  if (draft !== null)
+    return (
+      <input
+        className="input score-input"
+        type="number"
+        min={0}
+        max={10}
+        step={0.1}
+        autoFocus
+        value={draft}
+        aria-label="Closeness score, 0 to 10"
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') {
+            done.current = true;
+            setDraft(null);
+          }
+        }}
+      />
+    );
+  return (
+    <button
+      type="button"
+      className="score-edit"
+      title={`${title ? `${title}\n` : ''}Click to set the score yourself`}
+      onClick={() => {
+        done.current = false;
+        setDraft(score.toFixed(1));
+      }}
+    >
+      <ScoreBadge score={score} guess={guess} />
+    </button>
+  );
+}
+
 export function Chips<K extends string>({
   options,
   value,

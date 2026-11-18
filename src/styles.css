@@ -399,6 +399,9 @@ code.copy { cursor: copy; }
 .score.low { --bar: var(--primary); }
 .score.guess .score-num, .score.guess .score-bar { opacity: 0.55; }
 .score.none .score-num { color: var(--muted); font-weight: 500; }
+.score-edit { background: none; border: 1px solid transparent; border-radius: 6px; padding: 2px 4px; margin: -3px -5px; cursor: pointer; font: inherit; color: inherit; }
+.score-edit:hover, .score-edit:focus-visible { border-color: var(--border); }
+.score-input { width: 72px; padding: 2px 6px; font-variant-numeric: tabular-nums; }
 @media (max-width: 520px) { .score-bar, .score-rank { display: none; } }
 
 .photo-edit { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; }

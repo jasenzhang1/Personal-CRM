@@ -31,6 +31,16 @@ export async function setPlacement(db: SQLiteDatabase, personId: number, score: 
   if (score === 0) await db.runAsync('DELETE FROM comparisons WHERE a = ? OR b = ?', personId, personId);
 }
 
+/**
+ * You typed their score yourself. It sticks exactly as typed: their old comparisons are
+ * forgotten (otherwise the next refit would pull them back), and it drifts with activity from now.
+ */
+export async function setScoreByHand(db: SQLiteDatabase, personId: number, score: number, activity: number) {
+  const s = Math.round(Math.max(0, Math.min(10, score)) * 100) / 100;
+  await db.runAsync('DELETE FROM comparisons WHERE a = ? OR b = ?', personId, personId);
+  await setPlacement(db, personId, s, activity);
+}
+
 /** Forget a placement and their comparisons: they go back to an estimate from activity. */
 export async function removeRanking(db: SQLiteDatabase, personId: number) {
   await db.runAsync('DELETE FROM rankings WHERE person_id = ?', personId);

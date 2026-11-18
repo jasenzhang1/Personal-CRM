@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Avatar, Chips, Closeness, Modal, ScoreBadge, SourceIcon, TagInput, instagramUrl } from '@/components/ui';
+import { Avatar, Chips, Closeness, EditableScore, Modal, SourceIcon, TagInput, instagramUrl } from '@/components/ui';
 import { mergePeople } from '@/db/merge';
 import { sourceLinks } from '@/lib/sourceLinks';
 import { MergeForm } from './Duplicates';
@@ -31,7 +31,7 @@ import { formatBirthday, formatDate, isoDate, isValidBirthday } from '@/lib/date
 import { shrinkImage } from '@/lib/image';
 import { inferCircle } from '@/lib/relationship';
 import { keepName } from '@/db/names';
-import { activitySummary, loadScores, logInteraction, removeRanking, setPlacement } from '@/db/ranking';
+import { activitySummary, loadScores, logInteraction, removeRanking, setPlacement, setScoreByHand } from '@/db/ranking';
 import { describeScoreInfo, type ScoreInfo } from '@/lib/ranking';
 import { useQuery, useStore } from '@/lib/store';
 
@@ -387,7 +387,14 @@ export function PersonPage() {
           {id !== null && standing && (
             <Card title="Closeness score">
               <div className="row-gap">
-                <ScoreBadge score={standing.s.score} guess={!standing.s.placed} />
+                <EditableScore
+                  score={standing.s.score}
+                  guess={!standing.s.placed}
+                  onSave={async (n) => {
+                    await setScoreByHand(db, id, n, standing.s.activity);
+                    bump();
+                  }}
+                />
                 <ScoreRankText s={standing.s} of={standing.withScore} />
                 <Link className="btn secondary small" to={`/rank?person=${id}`}>
                   {standing.s.placed ? 'Re-rank' : '🏆 Rank them'}

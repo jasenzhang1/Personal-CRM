@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatBirthday, formatDate } from '@/lib/dates';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhotoIndicator, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
+import { Avatar, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhotoIndicator, EditableScore, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, getPerson, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
 import { inferCircle } from '@/lib/relationship';
-import { loadScores } from '@/db/ranking';
+import { loadScores, setScoreByHand } from '@/db/ranking';
 import { nameReviewList } from '@/db/names';
 import { photoStatus } from '@/db/photos';
 import { listDuplicates, mergePeople, richness } from '@/db/merge';
@@ -46,7 +46,7 @@ type CircleFilter = 'any' | Circle | 'unset' | 'org';
 
 const PAGE = 50;
 
-type Row = PersonListRow & { circleShown: Circle | null; guessed: boolean; score: number; guess: boolean; why: string };
+type Row = PersonListRow & { circleShown: Circle | null; guessed: boolean; score: number; guess: boolean; why: string; activity: number };
 
 /** How each sortable column sorts. Kept outside the component so the list can sort before columns render. */
 const columnSort: Partial<Record<ColumnKey, (r: Row) => string | number | null>> = {
@@ -257,10 +257,20 @@ export function People() {
     },
     score: {
       label: 'Closeness',
-      title: '0–10. Faded = guessed from how much you talk; play Rank to set it yourself.',
+      title: '0–10. Faded = guessed from how much you talk. Click a score to set it yourself, or play Rank.',
       width: '150px',
       min: 110,
-      render: (r) => <ScoreBadge score={r.score} title={r.why} guess={r.guess} />,
+      render: (r) => (
+        <EditableScore
+          score={r.score}
+          title={r.why}
+          guess={r.guess}
+          onSave={async (n) => {
+            await setScoreByHand(db, r.id, n, r.activity);
+            bump();
+          }}
+        />
+      ),
       sortValue: (r) => r.score,
     },
     sources: {
@@ -297,7 +307,7 @@ export function People() {
     const out: Row[] = people.list.map((p) => {
       const guess = inferCircle(p.sources, !!p.stage);
       const s = people.scores.get(p.id)!;
-      return { ...p, circleShown: p.circle ?? guess, guessed: !p.circle && !!guess, score: s.score, guess: !s.placed, why: describeScoreInfo(s) };
+      return { ...p, circleShown: p.circle ?? guess, guessed: !p.circle && !!guess, score: s.score, guess: !s.placed, why: describeScoreInfo(s), activity: s.activity };
     });
     const filtered =
       circle === 'any'
