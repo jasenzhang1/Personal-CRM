@@ -98,8 +98,8 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
         }
         if (!isKnown) {
           await db.runAsync(
-            'INSERT OR IGNORE INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, ?, ?, ?, ?)',
-            person.id, source, c.externalId, c.handle ?? null, t,
+            'INSERT OR IGNORE INTO sources (person_id, source, external_id, handle, first_seen, connected_on) VALUES (?, ?, ?, ?, ?, ?)',
+            person.id, source, c.externalId, c.handle ?? null, t, c.connectedOn ?? null,
           );
           known.set(c.externalId, person.id);
           linkedHere.add(person.id);
@@ -116,8 +116,8 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
       );
       const id = r.lastInsertRowId;
       await db.runAsync(
-        'INSERT OR IGNORE INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, ?, ?, ?, ?)',
-        id, source, c.externalId, c.handle ?? null, t,
+        'INSERT OR IGNORE INTO sources (person_id, source, external_id, handle, first_seen, connected_on) VALUES (?, ?, ?, ?, ?, ?)',
+        id, source, c.externalId, c.handle ?? null, t, c.connectedOn ?? null,
       );
       known.set(c.externalId, id);
       linkedHere.add(id);
@@ -125,6 +125,10 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
       index(created);
       result.added++;
     }
+    // Fill in connection dates for accounts imported before dates were kept (re-imports).
+    const dated = candidates.filter((c) => c.connectedOn);
+    for (const c of dated)
+      await db.runAsync('UPDATE sources SET connected_on = ? WHERE source = ? AND external_id = ? AND connected_on IS NULL', c.connectedOn!, source, c.externalId);
     if (baseline) await setSetting(db, baselineKey, t);
     await setSetting(db, `last_sync_${source}`, t);
   });

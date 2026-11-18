@@ -11,6 +11,7 @@ import { Duplicates } from './pages/Duplicates';
 import { Followers } from './pages/Followers';
 import { Birthdays } from './pages/Birthdays';
 import { PhotoRound } from './pages/PhotoRound';
+import { Timeline } from './pages/Timeline';
 import { Reminders } from './pages/Reminders';
 import { Sync } from './pages/Sync';
 
@@ -95,6 +96,7 @@ const router = createHashRouter([
       { path: '/followers', element: <Followers /> },
       { path: '/birthdays', element: <Birthdays /> },
       { path: '/photos', element: <PhotoRound /> },
+      { path: '/timeline', element: <Timeline /> },
       { path: '/reminders', element: <Reminders /> },
       { path: '/pipeline', element: <Pipeline /> },
       { path: '/sync', element: <Sync /> },

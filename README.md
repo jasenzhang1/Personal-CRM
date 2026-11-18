@@ -55,6 +55,10 @@ Imports also try to avoid duplicates in the first place. An Instagram chat that 
 
 Merging keeps everything from both copies: blank details are filled in, notes are combined, and tags, chats and call logs, rankings, pipeline history and import links all move to one person. Later imports of either account land on that person. A merge can't be undone, so download a backup before merging a lot at once.
 
+## Timeline
+
+**🗓 Timeline** (on People) lists who you added, day by day, from the dates in your exports: whom you followed on Instagram and when, LinkedIn connections ("Connected on"), Facebook friends, and people you added here. You can also show who followed you. Filter by platform or month. The header shows how many you added in the last 30 days and this year. Already imported before this existed? Import again to pick up the dates.
+
 ## Instagram followers
 
 **📸 Followers** (on People, or the link after an Instagram import) shows:

@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -166,6 +166,11 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
   if (current < 9) {
     // When you last updated or confirmed their picture in a photo round.
     await addColumn(db, 'people', 'photo_checked_at', 'TEXT');
+  }
+
+  if (current < 10) {
+    // When you connected on that platform (LinkedIn "Connected on", Facebook friends since…).
+    await addColumn(db, 'sources', 'connected_on', 'TEXT');
   }
 
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);

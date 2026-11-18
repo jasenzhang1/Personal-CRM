@@ -111,3 +111,27 @@ test('photo round: Instagram first, missing photos first, done people wait a mon
   assert.deepEqual(q.map((p) => [p.name, !!p.photo]), [['bo.k', false], ['amy.l', true]]);
   assert.ok(!q.some((p) => p.id === cy));
 });
+
+test('timeline: who you added each day, from each platform', async () => {
+  const { timelineEvents } = await import('../src/db/timeline.ts');
+  const db = fakeDb();
+  await migrate(db);
+  const fol = (u: string, ts: number) => ({ string_list_data: [{ value: u, href: `https://www.instagram.com/${u}`, timestamp: ts }] });
+  const followingList = { relationships_following: [{ title: 'amy.lee', string_list_data: [{ href: 'https://www.instagram.com/_u/amy.lee', timestamp: 1763000000 }] }] };
+  await ingest(db, 'instagram', parseInstagram([fol('amy.lee', 1763100000), fol('bo.kim', 1700000000)]));
+  await syncFollowList(db, 'followers', parseFollowList(JSON.stringify([fol('amy.lee', 1763100000), fol('bo.kim', 1700000000)])), '2026-11-18');
+  await syncFollowList(db, 'following', parseFollowList(JSON.stringify(followingList)), '2026-11-18');
+  const { ingest: ing } = await import('../src/sync/ingest.ts');
+  await ing(db, 'linkedin', [{ source: 'linkedin', externalId: 'https://www.linkedin.com/in/deelin', name: 'Dee Lin', handle: 'https://www.linkedin.com/in/deelin', connectedOn: '2024-03-05' } as any]);
+  await createPerson(db, { name: 'Met Today' });
+  const ev = await timelineEvents(db);
+  const show = ev.map((e) => `${e.day.slice(0, 10)} ${e.kind} ${e.name}`);
+  const { isoDate } = await import('../src/lib/dates.ts');
+  const local = (ts: number) => isoDate(new Date(ts * 1000)); // days are in your time zone
+  assert.ok(show.includes(`${local(1763000000)} ig_followed amy.lee`), show.join('\n'));
+  assert.ok(show.includes(`${local(1763100000)} ig_follower amy.lee`), show.join('\n'));
+  assert.ok(show.includes(`${local(1700000000)} ig_follower bo.kim`));
+  assert.ok(show.includes('2024-03-05 linkedin Dee Lin'));
+  assert.ok(ev.some((e) => e.kind === 'manual' && e.name === 'Met Today'));
+  assert.ok(!ev.some((e) => e.kind === 'instagram'), 'once follow lists are synced, the precise Instagram dates are used');
+});

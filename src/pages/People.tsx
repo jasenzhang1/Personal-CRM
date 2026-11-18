@@ -391,6 +391,9 @@ export function People() {
         <Link className="btn secondary" to="/rank">
           🏆 Rank friends
         </Link>
+        <Link className="btn secondary" to="/timeline" title="Who you added, day by day">
+          🗓 Timeline
+        </Link>
         <Link className="btn secondary" to="/followers">
           📸 Followers
         </Link>
