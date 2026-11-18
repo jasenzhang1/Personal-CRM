@@ -135,3 +135,29 @@ test('timeline: who you added each day, from each platform', async () => {
   assert.ok(ev.some((e) => e.kind === 'manual' && e.name === 'Met Today'));
   assert.ok(!ev.some((e) => e.kind === 'instagram'), 'once follow lists are synced, the precise Instagram dates are used');
 });
+
+test('timeline includes every way you connected', async () => {
+  const { timelineEvents, firstConnected } = await import('../src/db/timeline.ts');
+  const { importChats } = await import('../src/sync/activity.ts');
+  const { logInteraction } = await import('../src/db/ranking.ts');
+  const { parseDiscord, parseAddressBook } = await import('../src/sync/parsers.ts');
+  const db = fakeDb();
+  await migrate(db);
+  const ana = await createPerson(db, { name: 'Ana Ruiz' });
+  // Chats: first message 2025-01-02, first call 2025-03-04 on Instagram
+  await importChats(db, [{ source: 'instagram', threadId: 'ana_1', otherName: 'Ana Ruiz', messages: 12, calls: 1, callSeconds: 600,
+    days: [{ day: '2025-03-04', messages: 2, calls: 1, call_seconds: 600 }, { day: '2025-01-02', messages: 10, calls: 0, call_seconds: 0 }] } as any]);
+  await logInteraction(db, ana, '2026-11-01', 90);
+  // Discord friend with a "since" date; an address-book contact with a saved date
+  await ingest(db, 'discord', parseDiscord({ relationships: [{ id: '42', type: 1, since: '2021-06-07T10:00:00+00:00', user: { id: '42', username: 'bo' } }] }));
+  await ingest(db, 'phone', parseAddressBook({ address_book_v2: { address_book: [{ name: 'Cy Park', details: [{ contact_point: '+15550001' }], created_timestamp: 1500000000 }] } })!);
+  const ev = (await timelineEvents(db)).map((e) => `${e.day} ${e.kind}${e.kind === 'first_message' || e.kind === 'first_call' ? ':' + e.source : ''} ${e.name}`);
+  assert.ok(ev.includes('2025-01-02 first_message:instagram Ana Ruiz'), ev.join('\n'));
+  assert.ok(ev.includes('2025-03-04 first_call:instagram Ana Ruiz'), ev.join('\n'));
+  assert.ok(ev.includes('2026-11-01 hangout Ana Ruiz'), ev.join('\n'));
+  assert.ok(ev.includes('2021-06-07 discord bo'), ev.join('\n'));
+  assert.ok(ev.some((x) => / contact_saved Cy Park$/.test(x) && x.startsWith('2017-07-1')), ev.join('\n'));
+  // "New connections" uses each person's first day, not logged hangouts
+  const first = firstConnected(await timelineEvents(db));
+  assert.equal(first.get(ana), '2025-01-02');
+});
