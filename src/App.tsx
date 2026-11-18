@@ -21,6 +21,7 @@ function Layout() {
   const links = [
     { to: '/', label: 'Inbox', icon: '📥', badge: inboxCount },
     { to: '/people', label: 'People', icon: '👥' },
+    { to: '/timeline', label: 'Timeline', icon: '🗓' },
     { to: '/rank', label: 'Rank', icon: '🏆' },
     { to: '/reminders', label: 'Reminders', icon: '⏰' },
     ...(proMode ? [{ to: '/pipeline', label: 'Pipeline', icon: '📊' }] : []),

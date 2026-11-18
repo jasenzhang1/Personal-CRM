@@ -57,7 +57,7 @@ Merging keeps everything from both copies: blank details are filled in, notes ar
 
 ## Timeline
 
-**🗓 Timeline** (on People) lists who you added, day by day, from the dates in your exports: whom you followed on Instagram and when, LinkedIn connections ("Connected on"), Facebook friends, and people you added here. You can also show who followed you. Filter by platform or month. The header shows how many you added in the last 30 days and this year. Already imported before this existed? Import again to pick up the dates.
+**🗓 Timeline** (in the menu on the left) shows every way you connected with people, day by day: whom you followed on Instagram and who followed you, LinkedIn connections, Facebook and Discord friends, your first message and first call on Instagram, Messenger and Discord, calls and hangouts you logged, contacts saved in your phone (when the export records the date), and people you added here. Filter by type or app, view it as a **list** or a **calendar** (click a day to see who), and see how many new people you connected with in the last 30 days and this year. Already imported before this existed? Import again to pick up the dates.
 
 ## Instagram followers
 

@@ -407,7 +407,9 @@ export function parseDiscord(json: unknown): Candidate[] {
     const username = u.discriminator && u.discriminator !== '0' ? `${u.username}#${u.discriminator}` : u.username;
     const name = (r.nickname || u.global_name || u.username || '').trim();
     if (!id || !name) continue;
-    out.push({ source: 'discord', externalId: id, name, handle: username ? `@${username}` : undefined });
+    // Newer exports include when you became friends.
+    const since = typeof (r as { since?: unknown }).since === 'string' ? ((r as { since: string }).since.slice(0, 10)) : undefined;
+    out.push({ source: 'discord', externalId: id, name, handle: username ? `@${username}` : undefined, ...(since && /^\d{4}-\d{2}-\d{2}$/.test(since) ? { connectedOn: since } : {}) });
   }
   return out;
 }
@@ -647,7 +649,7 @@ export function parseAddressBook(json: unknown): Candidate[] | null {
   if (!fbList) return null;
   const key = nameKeys();
   const out: Candidate[] = [];
-  for (const item of fbList as { name?: string; details?: { contact_point?: string }[] }[]) {
+  for (const item of fbList as { name?: string; details?: { contact_point?: string }[]; created_timestamp?: number }[]) {
     const name = fixMojibake(item?.name ?? '').trim();
     const points = (item?.details ?? []).map((d) => d.contact_point?.trim()).filter((x): x is string => !!x);
     const display = name || points[0];
@@ -661,6 +663,8 @@ export function parseAddressBook(json: unknown): Candidate[] | null {
       phones: phones.length ? phones : undefined,
       emails: emails.length ? emails : undefined,
       quiet: true,
+      // When the contact was saved in your phone (Facebook records it).
+      ...(item.created_timestamp ? { connectedOn: isoFromTimestamp(item.created_timestamp) } : {}),
     });
   }
   return out;
