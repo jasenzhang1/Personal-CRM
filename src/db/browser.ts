@@ -38,6 +38,7 @@ export class BrowserDb implements SQLiteDatabase {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private inTx = false;
   private dirty = false;
+  private saving = false;
   private channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('personal-crm') : null;
   /** Called when another tab changed the data and we reloaded it. */
   onExternalChange: () => void = () => {};
@@ -57,11 +58,21 @@ export class BrowserDb implements SQLiteDatabase {
     const flush = () => void this.flush();
     addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
+    // Saving is asynchronous and browsers don't wait for it when a page closes, so if a change
+    // hasn't been saved yet, start saving and ask "Leave site?" (only in that brief moment).
+    addEventListener('beforeunload', (e) => {
+      if (!this.dirty && !this.saving) return;
+      void this.flush();
+      e.preventDefault();
+      e.returnValue = '';
+    });
   }
 
   static async open(): Promise<BrowserDb> {
     const SQL = await initSqlJs({ locateFile: () => wasmUrl });
-    const bytes = await loadBytes().catch(() => undefined);
+    // If reading your saved data fails, stop here. Starting empty would save an empty
+    // database over your real one a moment later.
+    const bytes = await loadBytes();
     navigator.storage?.persist?.().catch(() => {});
     return new BrowserDb(SQL, new SQL.Database(bytes));
   }
@@ -76,16 +87,22 @@ export class BrowserDb implements SQLiteDatabase {
 
   private wrote() {
     this.dirty = true;
-    if (this.inTx) return;
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => void this.flush(), 250);
+    this.schedule(250);
+  }
+
+  /** Save soon. An already-scheduled save is kept, not pushed back, so a stream of changes can't delay saving forever. */
+  private schedule(ms: number) {
+    if (!this.saveTimer) this.saveTimer = setTimeout(() => void this.flush(), ms);
   }
 
   async flush() {
-    if (!this.dirty || this.inTx) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
+    if (!this.dirty) return;
+    // Mid-transaction or mid-save: try again shortly rather than dropping the save.
+    if (this.inTx || this.saving) return this.schedule(100);
     this.dirty = false;
+    this.saving = true;
     const bytes = this.db.export();
     this.db.exec('PRAGMA foreign_keys = ON'); // export() resets connection pragmas
     try {
@@ -93,9 +110,11 @@ export class BrowserDb implements SQLiteDatabase {
     } catch (e) {
       console.error('Saving to this browser failed', e);
       this.dirty = true;
-      if (!this.saveTimer) this.saveTimer = setTimeout(() => void this.flush(), 5000);
+      this.schedule(5000);
       this.onSaveError(e);
       return;
+    } finally {
+      this.saving = false;
     }
     this.channel?.postMessage('saved');
     this.onSaved();
@@ -161,5 +180,10 @@ export class BrowserDb implements SQLiteDatabase {
       this.inTx = false;
     }
     this.wrote();
+  }
+
+  /** True while there are changes not yet saved to this browser. */
+  get unsaved() {
+    return this.dirty || this.saving;
   }
 }

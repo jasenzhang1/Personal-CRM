@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { formatBirthday, formatDate } from '@/lib/dates';
 import { Link } from 'react-router';
 import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, PhotoIndicator, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
@@ -9,7 +10,7 @@ import { loadScores } from '@/db/ranking';
 import { nameReviewList } from '@/db/names';
 import { photoStatus } from '@/db/photos';
 import { listDuplicates } from '@/db/merge';
-import { allCities, chatOnlyPeople, deletePeople, setArchived, setCity } from '@/db/people';
+import { allCities, chatOnlyPeople, deletePeople, getSetting, setArchived, setCity, setSetting, setTags } from '@/db/people';
 import { looksLikeOrganization } from '@/lib/orgs';
 import { useQuery, useStore } from '@/lib/store';
 
@@ -20,12 +21,135 @@ const FILTER_STATUS: Record<Filter, PersonStatus[]> = {
   todo: ['new', 'backlog'],
   archived: ['archived'],
 };
-type Sort = 'score' | 'name' | 'recent';
+type SortKey = 'name' | ColumnKey;
+type SortDir = 'asc' | 'desc';
+/** Numbers and dates read best biggest/newest first; text A–Z. */
+const DEFAULT_DIR: Partial<Record<SortKey, SortDir>> = { score: 'desc', created: 'desc', last_contacted: 'desc', sources: 'desc' };
+
+/** Optional table columns, in display order. Person is always first. */
+const COLUMN_ORDER = ['type', 'tags', 'score', 'sources', 'phone', 'email', 'company', 'city', 'how_met', 'birthday', 'last_contacted', 'created'] as const;
+type ColumnKey = (typeof COLUMN_ORDER)[number];
+const DEFAULT_COLUMNS: ColumnKey[] = ['type', 'tags', 'score', 'sources'];
+type Column = {
+  label: string;
+  title?: string;
+  mobileLabel?: string;
+  width: string;
+  min: number;
+  render: (r: Row) => ReactNode;
+  /** What to sort by (null/empty sorts last). Omit for columns that can't be sorted. */
+  sortValue?: (r: Row) => string | number | null;
+};
 type CircleFilter = 'any' | Circle | 'unset' | 'org';
 
 const PAGE = 50;
 
 type Row = PersonListRow & { circleShown: Circle | null; guessed: boolean; score: number; guess: boolean; why: string };
+
+/** How each sortable column sorts. Kept outside the component so the list can sort before columns render. */
+const columnSort: Partial<Record<ColumnKey, (r: Row) => string | number | null>> = {
+  type: (r) => circleInfo(r.circleShown)?.label ?? null,
+  tags: (r) => (r.tags.length ? r.tags.join(', ').toLowerCase() : null),
+  score: (r) => r.score,
+  sources: (r) => r.sources.length,
+  phone: (r) => r.phone,
+  email: (r) => r.email?.toLowerCase() ?? null,
+  company: (r) => r.company?.toLowerCase() ?? null,
+  city: (r) => r.city?.toLowerCase() ?? null,
+  how_met: (r) => r.how_met?.toLowerCase() ?? null,
+  birthday: (r) => (r.birthday ? r.birthday.slice(-5) : null),
+  last_contacted: (r) => r.last_contacted,
+  created: (r) => r.created_at,
+};
+
+function SortHeader({ label, title, k, sortKey, sortDir, onSort }: { label: string; title?: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void }) {
+  const active = k === sortKey;
+  return (
+    <span role="columnheader" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} title={title}>
+      <button type="button" className={`sort-head${active ? ' active' : ''}`} onClick={() => onSort(k)}>
+        {label}
+        <span aria-hidden className="sort-arrow">{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      </button>
+    </span>
+  );
+}
+
+/** The "+" in a Tags cell: pick a tag you've used before, or type a new one to create it. */
+function TagAdder({ person, allTags, onAdd }: { person: PersonListRow; allTags: string[]; onAdd: (tag: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const box = useRef<HTMLSpanElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const place = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, innerWidth - 246)) });
+  };
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    // Pinned to the screen (the table scrolls sideways, which would clip it), so follow the + on scroll.
+    const hide = () => place();
+    addEventListener('mousedown', close);
+    addEventListener('scroll', hide, true);
+    return () => {
+      removeEventListener('mousedown', close);
+      removeEventListener('scroll', hide, true);
+    };
+  }, [open]);
+  const have = new Set(person.tags.map((t) => t.toLowerCase()));
+  const query = q.trim();
+  const options = allTags.filter((t) => !have.has(t.toLowerCase()) && t.toLowerCase().includes(query.toLowerCase())).slice(0, 8);
+  const exists = allTags.some((t) => t.toLowerCase() === query.toLowerCase()) || have.has(query.toLowerCase());
+  const add = (t: string) => {
+    onAdd(t);
+    setQ('');
+    setOpen(false);
+  };
+  return (
+    <span className="tag-adder" ref={box}>
+      <button
+        type="button"
+        className="tag-plus"
+        ref={btn}
+        onClick={() => {
+          place();
+          setOpen((o) => !o);
+        }} aria-label={`Add a tag to ${person.name}`} title="Add a tag">
+        +
+      </button>
+      {open && (
+        <span className="tag-pop card" style={pos ?? undefined} role="dialog" aria-label={`Tags for ${person.name}`}>
+          <input
+            className="input"
+            autoFocus
+            placeholder="Search or create a tag…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setOpen(false);
+              if (e.key === 'Enter' && query) {
+                e.preventDefault();
+                add(options.find((o) => o.toLowerCase() === query.toLowerCase()) ?? query);
+              }
+            }}
+          />
+          {options.map((t) => (
+            <button key={t} type="button" className="tag-option" onClick={() => add(t)}>
+              <TagChip tag={t} />
+            </button>
+          ))}
+          {query && !exists && (
+            <button type="button" className="tag-option create" onClick={() => add(query)}>
+              + Create “{query}”
+            </button>
+          )}
+          {!options.length && !query && <span className="small muted">Type a name to create your first tag.</span>}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function People() {
   const { db, bump } = useStore();
@@ -33,7 +157,17 @@ export function People() {
   const [filter, setFilter] = useState<Filter>('all');
   const [tag, setTag] = useState('');
   const [circle, setCircle] = useState<CircleFilter>('any');
-  const [sort, setSort] = useState<Sort>('score');
+  const [sortKey, setSortKey] = useState<SortKey>('score');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [platform, setPlatform] = useState('');
+  const sortBy = (k: SortKey) => {
+    setPage(0);
+    if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortKey(k);
+      setSortDir(DEFAULT_DIR[k] ?? 'asc');
+    }
+  };
   const [page, setPage] = useState(0);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -52,6 +186,101 @@ export function People() {
     const used = new Set((await db.getAllAsync<{ source: string }>('SELECT DISTINCT source FROM sources')).map((r) => r.source));
     return [...SOURCE_ORDER.filter((s) => used.has(s)), ...[...used].filter((s) => !SOURCE_ORDER.includes(s))];
   }, []) ?? [];
+
+  // Which columns to show (Person is always shown). Saved with your data so it sticks.
+  const savedCols = useQuery(async () => {
+    const v = await getSetting(db, 'people_columns');
+    try {
+      return v ? (JSON.parse(v) as ColumnKey[]) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+  const [visibleCols, setVisibleCols] = useState<ColumnKey[] | null>(null);
+  const colKeys = visibleCols ?? savedCols ?? DEFAULT_COLUMNS;
+  const toggleCol = async (key: ColumnKey) => {
+    const next = colKeys.includes(key) ? colKeys.filter((k) => k !== key) : COLUMN_ORDER.filter((k) => k === key || colKeys.includes(k));
+    setVisibleCols(next);
+    await setSetting(db, 'people_columns', JSON.stringify(next));
+  };
+
+  const columns: Record<ColumnKey, Column> = {
+    type: {
+      label: 'Type',
+      width: '120px',
+      min: 110,
+      sortValue: (r) => circleInfo(r.circleShown)?.label ?? null,
+      render: (r) => {
+        const c = circleInfo(r.circleShown);
+        return (
+          <button
+            type="button"
+            className={`pill pill-sm${c ? '' : ' unset'}${r.guessed ? ' guessed' : ''}`}
+            style={c ? { background: c.color } : undefined}
+            title={r.guessed ? `Guessed from ${r.sources.map((x) => SOURCE_LABELS[x] ?? x).join(', ')}. Click to set.` : 'Click to change'}
+            onClick={(e) => setMenu({ el: e.currentTarget, row: r })}
+          >
+            {c ? c.label : '+ Type'}
+          </button>
+        );
+      },
+    },
+    tags: {
+      label: 'Tags',
+      width: 'minmax(140px, 2fr)',
+      min: 140,
+      sortValue: (r) => (r.tags.length ? r.tags.join(', ').toLowerCase() : null),
+      render: (r) => (
+        <span className="pt-tags">
+          {r.tags.map((t) => (
+            <button key={t} type="button" className="tag-btn" onClick={() => resetPaging(setTag)(t)} title={`Show everyone tagged ${t}`}>
+              <TagChip tag={t} />
+            </button>
+          ))}
+          <TagAdder
+            person={r}
+            allTags={(tags ?? []).map((t) => t.tag)}
+            onAdd={async (t) => {
+              await setTags(db, r.id, [...r.tags, t]);
+              bump();
+            }}
+          />
+        </span>
+      ),
+    },
+    score: {
+      label: 'Closeness',
+      title: '0–10. Faded = guessed from how much you talk; play Rank to set it yourself.',
+      width: '150px',
+      min: 110,
+      render: (r) => <ScoreBadge score={r.score} title={r.why} guess={r.guess} />,
+      sortValue: (r) => r.score,
+    },
+    sources: {
+      label: 'Connected on',
+      sortValue: (r) => r.sources.length,
+      width: `${Math.max(sourceCols.length, 1) * 28 + 8}px`,
+      min: Math.max(sourceCols.length, 1) * 28 + 8,
+      render: (r) => (
+        <span className="source-grid" style={{ gridTemplateColumns: `repeat(${Math.max(sourceCols.length, 1)}, 26px)` }}>
+          {sourceCols.map((x) => (
+            <SourceIcon key={x} source={x} href={r.links[x]} missing={!r.sources.includes(x)} />
+          ))}
+        </span>
+      ),
+    },
+    phone: { label: 'Phone', mobileLabel: '📞', width: '150px', min: 130, sortValue: (r) => r.phone, render: (r) => (r.phone ? <a href={`tel:${r.phone.replace(/[^\d+]/g, '')}`}>{r.phone}</a> : null) },
+    email: { label: 'Email', mobileLabel: '✉️', width: 'minmax(160px, 1.5fr)', min: 160, sortValue: (r) => r.email?.toLowerCase() ?? null, render: (r) => (r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : null) },
+    company: { label: 'Company', mobileLabel: '🏢', width: 'minmax(120px, 1.2fr)', min: 120, sortValue: (r) => r.company?.toLowerCase() ?? null, render: (r) => r.company || null },
+    city: { label: 'City', mobileLabel: '📍', width: '150px', min: 130, sortValue: (r) => r.city?.toLowerCase() ?? null, render: (r) => r.city || null },
+    how_met: { label: 'How you met', mobileLabel: '🤝', width: 'minmax(140px, 1.5fr)', min: 140, sortValue: (r) => r.how_met?.toLowerCase() ?? null, render: (r) => r.how_met || null },
+    birthday: { label: 'Birthday', mobileLabel: '🎂', width: '110px', min: 100, sortValue: (r) => (r.birthday ? r.birthday.slice(-5) : null), render: (r) => (r.birthday ? formatBirthday(r.birthday) : null) },
+    last_contacted: { label: 'Last talked', mobileLabel: '💬', width: '120px', min: 110, sortValue: (r) => r.last_contacted, render: (r) => (r.last_contacted ? formatDate(r.last_contacted) : null) },
+    created: { label: 'Added', mobileLabel: 'Added', width: '120px', min: 110, sortValue: (r) => r.created_at, render: (r) => formatDate(r.created_at.slice(0, 10)) },
+  };
+  const shownCols = COLUMN_ORDER.filter((k) => colKeys.includes(k)).map((k) => ({ key: k, ...columns[k] }));
+  const gridCols = ['44px', 'minmax(200px, 2.2fr)', ...shownCols.map((c) => c.width)].join(' ');
+  const tableMinWidth = 44 + 200 + shownCols.reduce((n, c) => n + c.min + 12, 0);
   const [city, setCityFilter] = useState('');
   const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
   const dupes = useQuery(async () => (await listDuplicates(db)).filter((p) => p.strong).length, []) ?? 0;
@@ -73,10 +302,23 @@ export function People() {
       const c = city.toLowerCase();
       for (let i = filtered.length - 1; i >= 0; i--) if ((filtered[i].city ?? '').toLowerCase() !== (c === '__none' ? '' : c)) filtered.splice(i, 1);
     }
-    if (sort === 'score') filtered.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-    if (sort === 'recent') filtered.sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return filtered;
-  }, [people, circle, sort, city]);
+    const list = platform ? filtered.filter((r) => r.sources.includes(platform)) : filtered;
+    // Sort by the chosen column; empty values always go last; ties fall back to name.
+    const value = sortKey === 'name' ? (r: Row) => r.name.toLowerCase() : columnSort[sortKey];
+    if (value) {
+      const sign = sortDir === 'asc' ? 1 : -1;
+      list.sort((a, b) => {
+        const x = value(a);
+        const y = value(b);
+        const xe = x === null || x === '';
+        const ye = y === null || y === '';
+        if (xe !== ye) return xe ? 1 : -1;
+        const c = xe ? 0 : typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+        return sign * c || a.name.localeCompare(b.name);
+      });
+    }
+    return list;
+  }, [people, circle, sortKey, sortDir, city, platform]);
 
   const bulkCity = async () => {
     const c = prompt(`City for ${selected.size.toLocaleString()} ${selected.size === 1 ? 'person' : 'people'} (e.g. Los Angeles, CA). Leave blank to clear.`, city && city !== '__none' ? city : '');
@@ -219,11 +461,52 @@ export function People() {
               ))}
               <option value="__none">City not set</option>
             </select>
-            <select className="input" value={sort} onChange={(e) => resetPaging(setSort)(e.target.value as Sort)} aria-label="Sort">
-              <option value="score">Closest first</option>
-              <option value="name">Name A–Z</option>
-              <option value="recent">Recently added</option>
+            <details className="col-menu">
+              <summary className="btn secondary small">⚙︎ Columns</summary>
+              <div className="col-menu-pop card" role="group" aria-label="Columns to show">
+                <span className="small muted">Show columns</span>
+                {COLUMN_ORDER.map((k) => (
+                  <label key={k} className="check">
+                    <input type="checkbox" checked={colKeys.includes(k)} onChange={() => toggleCol(k)} />
+                    {columns[k].label}
+                  </label>
+                ))}
+                <button type="button" className="link-btn small" onClick={() => { setVisibleCols(DEFAULT_COLUMNS); setSetting(db, 'people_columns', null); }}>
+                  Reset to default
+                </button>
+              </div>
+            </details>
+            <select className="input" value={platform} onChange={(e) => resetPaging(setPlatform)(e.target.value)} aria-label="Platform">
+              <option value="">All platforms</option>
+              {sourceCols.map((x) => (
+                <option key={x} value={x}>
+                  {SOURCE_LABELS[x] ?? x}
+                </option>
+              ))}
             </select>
+            <span className="sort-picker">
+              <select
+                className="input"
+                value={sortKey}
+                onChange={(e) => {
+                  const k = e.target.value as SortKey;
+                  setPage(0);
+                  setSortKey(k);
+                  setSortDir(DEFAULT_DIR[k] ?? 'asc');
+                }}
+                aria-label="Sort"
+              >
+                <option value="name">Sort: Name</option>
+                {COLUMN_ORDER.filter((k) => columnSort[k]).map((k) => (
+                  <option key={k} value={k}>
+                    Sort: {columns[k].label}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="btn secondary small" onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))} aria-label={sortDir === 'asc' ? 'Ascending, click to reverse' : 'Descending, click to reverse'} title="Reverse the order">
+                {sortDir === 'asc' ? '↑' : '↓'}
+              </button>
+            </span>
           </div>
         </div>
       </div>
@@ -259,77 +542,63 @@ export function People() {
       )}
       {rows && rows.length > 0 && (
         <div className="card people-table" role="table" aria-label="People">
-          <div className="pt-row pt-head" role="row">
-            <span role="columnheader">Person</span>
-            <span role="columnheader">Type</span>
-            <span role="columnheader">Tags</span>
-            <span role="columnheader" title="0–10. Faded = guessed from how much you talk; play Rank to set it yourself.">
-              Closeness
-            </span>
-            <span role="columnheader">Connected on</span>
-          </div>
-          {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r, j) => {
-            const i = pg * PAGE + j;
-            const c = circleInfo(r.circleShown);
-            return (
-              <div key={r.id} className={`pt-row${r.status === 'archived' ? ' dim' : ''}`} role="row">
-                {selecting ? (
-                  <label className="pt-person selectable" role="cell">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(r.id)}
-                      onChange={(e) => {
-                        const next = new Set(selected);
-                        if (e.target.checked) next.add(r.id);
-                        else next.delete(r.id);
-                        setSelected(next);
-                      }}
-                      aria-label={`Select ${r.name}`}
-                    />
-                    <Avatar name={r.name} photo={r.photo} size={36} />
-                    <span className="person-text">
-                      <span className="person-name">{r.name}</span>
-                      <span className="person-sub">{[r.city && `📍 ${r.city}`, r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
-                    </span>
-                  </label>
+          <div className="pt-inner" style={{ ['--pt-cols' as string]: gridCols, ['--pt-min' as string]: `${tableMinWidth}px` }}>
+            <div className="pt-row pt-head" role="row">
+              <span role="columnheader" className="pt-num">#</span>
+              <SortHeader label="Person" k="name" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              {shownCols.map((c) =>
+                c.sortValue ? (
+                  <SortHeader key={c.key} label={c.label} title={c.title} k={c.key} sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 ) : (
-                  <Link to={`/person/${r.id}`} className="pt-person" role="cell">
-                    <Avatar name={r.name} photo={r.photo} size={36} />
-                    <span className="person-text">
-                      <span className="person-name">{r.name}</span>
-                      <span className="person-sub">{[r.city && `📍 ${r.city}`, r.how_met, r.company].filter(Boolean).join(' · ') || handleOf(r)}</span>
-                    </span>
-                  </Link>
-                )}
-                <span className="pt-type" role="cell">
-                  <button
-                    type="button"
-                    className={`pill pill-sm${c ? '' : ' unset'}${r.guessed ? ' guessed' : ''}`}
-                    style={c ? { background: c.color } : undefined}
-                    title={r.guessed ? `Guessed from ${r.sources.map((s) => SOURCE_LABELS[s] ?? s).join(', ')}. Click to set.` : 'Click to change'}
-                    onClick={(e) => setMenu({ el: e.currentTarget, row: r })}
-                  >
-                    {c ? c.label : '+ Type'}
-                  </button>
-                </span>
-                <span className="pt-tags" role="cell">
-                  {r.tags.map((t) => (
-                    <button key={t} type="button" className="tag-btn" onClick={() => resetPaging(setTag)(t)} title={`Show everyone tagged ${t}`}>
-                      <TagChip tag={t} />
-                    </button>
-                  ))}
-                </span>
-                <span className="pt-score" role="cell">
-                  <ScoreBadge score={r.score} rank={sort === 'score' && r.score > 0 ? i + 1 : undefined} title={r.why} guess={r.guess} />
-                </span>
-                <span className="pt-sources source-grid" role="cell" style={{ gridTemplateColumns: `repeat(${Math.max(sourceCols.length, 1)}, 26px)` }}>
-                  {sourceCols.map((s) => (
-                    <SourceIcon key={s} source={s} href={r.links[s]} missing={!r.sources.includes(s)} />
-                  ))}
-                </span>
-              </div>
-            );
-          })}
+                  <span key={c.key} role="columnheader" title={c.title}>
+                    {c.label}
+                  </span>
+                ),
+              )}
+            </div>
+            {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r, j) => {
+              const i = pg * PAGE + j;
+              const person = (
+                <>
+                  <Avatar name={r.name} photo={r.photo} size={36} />
+                  <span className="person-name">{r.name}</span>
+                </>
+              );
+              return (
+                <div key={r.id} className={`pt-row${r.status === 'archived' ? ' dim' : ''}`} role="row">
+                  <span className="pt-num" role="cell">{i + 1}</span>
+                  {selecting ? (
+                    <label className="pt-person selectable" role="cell">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(r.id)}
+                        onChange={(e) => {
+                          const next = new Set(selected);
+                          if (e.target.checked) next.add(r.id);
+                          else next.delete(r.id);
+                          setSelected(next);
+                        }}
+                        aria-label={`Select ${r.name}`}
+                      />
+                      {person}
+                    </label>
+                  ) : (
+                    <Link to={`/person/${r.id}`} className="pt-person" role="cell">
+                      {person}
+                    </Link>
+                  )}
+                  {shownCols.map((c) => {
+                    const v = c.render(r);
+                    return (
+                      <span key={c.key} role="cell" className={`pt-cell pt-${c.key}${v === null ? ' is-empty' : ''}`} data-label={c.mobileLabel}>
+                        {v}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       {rows && <Pager page={pg} pageSize={PAGE} count={rows.length} onChange={setPage} />}
@@ -348,6 +617,3 @@ export function People() {
   );
 }
 
-function handleOf(r: PersonListRow) {
-  return r.phone || r.email || '';
-}

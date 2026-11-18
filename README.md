@@ -101,6 +101,14 @@ Instagram, LinkedIn and Facebook exports never include other people's profile pi
 
 Tick *Also re-check people who already have a photo* to refresh pictures that may have changed. Reminders shows the round once a month, and **📅 Remind me monthly** adds a calendar reminder on the 1st.
 
+## The People table
+
+- **Numbered rows**, numbered in the current order.
+- **⚙︎ Columns** shows or hides Type, Tags, Closeness, Connected on, Phone, Email, Company, City, How you met, Birthday, Last talked and Added. The choice is remembered. On wide tables the number and name stay pinned while you scroll sideways.
+- **Sort by any column**: click its header, and click again to reverse. Or use the Sort menu and ↑/↓ on a phone. Empty values always sort last, and birthdays sort by calendar date.
+- **Filter** by status, type, tag, city and platform, or search across names, tags, handles, companies, cities and notes.
+- **+ in the Tags column** adds a tag to someone. Pick one you've used before, or type a new one to create it.
+
 ## Ranking and closeness scores
 
 Every person has one **0–10 closeness score**, and every list sorts by it. There are no fixed buckets like "inner circle": friendships change, so scores do too.
