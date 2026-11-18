@@ -228,6 +228,7 @@ export function Sync() {
   };
 
   const importFiles = async (files: File[]) => {
+    if (!db.editing) return alert('Turn on Edit mode (top of the page) to import.');
     setBusy('files');
     try {
       const { entries, notes } = await expandFiles(files);
@@ -289,6 +290,7 @@ export function Sync() {
   };
 
   const restoreBackup = async (f: File) => {
+    if (!db.editing) return alert('Turn on Edit mode (top of the page) to restore a backup.');
     if (!confirm(`Replace everything in this browser with “${f.name}”? Your current data here will be overwritten.`)) return;
     try {
       await db.importFile(new Uint8Array(await f.arrayBuffer()));

@@ -19,6 +19,7 @@
   --radius: 12px;
   --sidebar: 232px;
   --tabbar: 62px;
+  --edit-bar: 42px;
   color-scheme: light;
 }
 
@@ -123,6 +124,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .row-gap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .text-danger { color: var(--danger); }
 .empty { text-align: center; color: var(--muted); padding: 40px 16px; max-width: 520px; margin: 0 auto; line-height: 1.6; }
+/* ---------- edit mode ---------- */
+.edit-bar {
+  position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 8px;
+  height: var(--edit-bar); box-sizing: border-box; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.edit-bar.on { background: var(--primary-soft); border-bottom-color: var(--primary); }
+.edit-toast {
+  position: fixed; z-index: 60; left: 16px; right: 16px; bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 12px);
+  display: flex; align-items: center; gap: 8px; max-width: 520px; margin: 0 auto;
+  padding: 10px 12px; border-radius: 10px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
+}
+@media (min-width: 860px) { .edit-bar { padding: 0 32px; } }
+@media (min-width: 860px) { .edit-toast { bottom: 24px; left: calc(var(--sidebar) + 16px); } }
+
 .notice { background: var(--primary-soft); color: var(--text); padding: 10px 14px; border-radius: 10px; }
 .notice.err { background: var(--danger-soft); color: var(--danger); }
 
@@ -195,7 +211,7 @@ select.input { width: auto; flex: 1; min-width: 90px; }
 
 /* ---------- person page ---------- */
 .person-bar {
-  position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  position: sticky; top: var(--edit-bar); z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin: -20px -16px 0; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
 }
@@ -491,7 +507,7 @@ a.source-badge.link:hover { background: color-mix(in srgb, currentColor 10%, tra
 .err-text { color: var(--danger, #d83a52); flex-basis: 100%; }
 
 /* ---------- select & archive ---------- */
-.bulk-bar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; }
+.bulk-bar { position: sticky; top: calc(var(--edit-bar) + 8px); z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; }
 .bulk-bar .grow { flex: 1; }
 .pt-person.selectable { cursor: pointer; }
 .pt-person.selectable input { width: 18px; height: 18px; flex: none; accent-color: var(--primary); }
@@ -604,3 +620,4 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
 .pt-row.drop-target, .pt-row.drop-target > .pt-num, .pt-row.drop-target > .pt-person { background: color-mix(in srgb, var(--primary) 12%, var(--surface)) !important; }
 .pt-row.drop-target { outline: 2px dashed var(--primary); outline-offset: -2px; position: relative; }
 .pt-row.drop-target::after { content: 'Drop to merge'; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 700; color: var(--primary); background: var(--surface); padding: 2px 8px; border-radius: 999px; pointer-events: none; }
+

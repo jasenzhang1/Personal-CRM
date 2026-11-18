@@ -195,8 +195,8 @@ test('merge all likely: skips anyone matching more than one person', async () =>
   assert.equal((await listDuplicates(db)).filter((p) => p.strong).length, 2); // the Kevin pairs are still there to check
 });
 
-test('removing people who only came from chats keeps the ones you added to', async () => {
-  const { chatOnlyPeople, deletePeople } = await import('../src/db/people.ts');
+test('people with no contact or profile link are found for removal; a typed-in phone keeps someone', async () => {
+  const { unlinkedPeople, deletePeople } = await import('../src/db/people.ts');
   const db = fakeDb();
   await migrate(db);
   // Older versions created these from busy chats.
@@ -214,9 +214,12 @@ test('removing people who only came from chats keeps the ones you added to', asy
   const follower = await createPerson(db, { name: 'Real Follower' });
   await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'instagram', 'real.f', '@real.f', ?)", follower, t);
   await db.runAsync("INSERT INTO sources (person_id, source, external_id, first_seen) VALUES (?, 'instagram', 'chat:c_4', ?)", follower, t);
-  const r = await chatOnlyPeople(db);
-  assert.deepEqual([r.removable, r.kept.sort()], [[plain], [noted, ranked].sort()]);
-  await deletePeople(db, r.removable);
-  assert.deepEqual((await db.getAllAsync('SELECT name FROM people ORDER BY id')).map((x: any) => x.name), ['Chat With Notes', 'Chat Ranked', 'Real Follower']);
+  const bare = await createPerson(db, { name: 'Typed In, Nothing Else' });
+  const withPhone = await createPerson(db, { name: 'Typed In With Phone' });
+  await db.runAsync("UPDATE people SET phone = '3105550100' WHERE id = ?", withPhone);
+  const r = await unlinkedPeople(db);
+  assert.deepEqual(r.sort(), [plain, noted, ranked, bare].sort());
+  await deletePeople(db, r);
+  assert.deepEqual((await db.getAllAsync('SELECT name FROM people ORDER BY id')).map((x: any) => x.name), ['Real Follower', 'Typed In With Phone']);
   assert.equal((await db.getFirstAsync("SELECT COUNT(*) n FROM sources WHERE external_id = 'chat:c_1'")).n, 0);
 });

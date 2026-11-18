@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { BrowserDb } from '@/db/browser';
+import { ReadOnlyError, type BrowserDb } from '@/db/browser';
 import { countByStatus, getSetting, setSetting } from '@/db/people';
 
 interface Store {
@@ -12,6 +12,16 @@ interface Store {
   setProMode: (on: boolean) => Promise<void>;
   /** Set when the browser refused to save; cleared on the next successful save. */
   saveError: string | null;
+  /** Edit mode: changes are only allowed while it's on, and kept until Save. */
+  editing: boolean;
+  /** Something changed since edit mode turned on. */
+  hasEdits: boolean;
+  beginEdit: () => void;
+  saveEdit: () => Promise<void>;
+  discardEdit: () => void;
+  /** Set briefly when a change was refused because edit mode is off. */
+  blocked: boolean;
+  dismissBlocked: () => void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -22,6 +32,44 @@ export function StoreProvider({ db, children }: { db: BrowserDb; children: React
   const [proMode, setProModeState] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
+  const [editing, setEditing] = useState(db.editing);
+  const [hasEdits, setHasEdits] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+
+  useEffect(() => {
+    db.onEditChange = () => {
+      setEditing(db.editing);
+      setHasEdits(db.hasEdits);
+    };
+    // A change refused because edit mode is off: say so instead of failing silently.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onRejection = (e: PromiseRejectionEvent) => {
+      if (!(e.reason instanceof ReadOnlyError)) return;
+      e.preventDefault();
+      setBlocked(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setBlocked(false), 6000);
+    };
+    addEventListener('unhandledrejection', onRejection);
+    return () => {
+      clearTimeout(timer);
+      removeEventListener('unhandledrejection', onRejection);
+    };
+  }, [db]);
+
+  const beginEdit = useCallback(() => {
+    db.beginEdit();
+    setBlocked(false);
+  }, [db]);
+  const saveEdit = useCallback(async () => {
+    await db.saveEdit();
+    bump();
+  }, [db, bump]);
+  const discardEdit = useCallback(() => {
+    db.discardEdit();
+    bump();
+  }, [db, bump]);
+  const dismissBlocked = useCallback(() => setBlocked(false), []);
 
   useEffect(() => {
     db.onExternalChange = bump; // another tab saved changes
@@ -43,7 +91,7 @@ export function StoreProvider({ db, children }: { db: BrowserDb; children: React
     [db, bump],
   );
 
-  return <Ctx.Provider value={{ db, version, bump, inboxCount, proMode, setProMode, saveError }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ db, version, bump, inboxCount, proMode, setProMode, saveError, editing, hasEdits, beginEdit, saveEdit, discardEdit, blocked, dismissBlocked }}>{children}</Ctx.Provider>;
 }
 
 export function useStore(): Store {

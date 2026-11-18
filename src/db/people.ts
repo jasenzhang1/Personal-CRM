@@ -292,24 +292,17 @@ export async function setArchived(db: SQLiteDatabase, ids: number[], archived: b
 }
 
 /**
- * People who only exist because of a chat (no Instagram/phone/LinkedIn… account), so they have no
- * profile link. `removable` are the ones you haven't added anything to; `kept` have your notes,
- * tags, a ranking, a birthday or other details, so they're left alone.
+ * People with no account from any import (phone, Google, Instagram, LinkedIn, Facebook, Discord)
+ * and no phone number or email: mostly people older versions created from chats, which carry no
+ * username. Chat links alone don't count as a link.
  */
-export async function chatOnlyPeople(db: SQLiteDatabase): Promise<{ removable: number[]; kept: number[] }> {
-  const rows = await db.getAllAsync<{ id: number; yours: number }>(
-    `SELECT p.id,
-            (COALESCE(p.notes, '') != '' OR COALESCE(p.how_met, '') != '' OR p.birthday IS NOT NULL OR p.city IS NOT NULL
-             OR p.phone IS NOT NULL OR p.email IS NOT NULL OR p.closeness > 0 OR p.stage IS NOT NULL OR p.circle IS NOT NULL
-             OR p.status = 'reviewed' OR p.name_ok = 1
-             OR EXISTS (SELECT 1 FROM person_tags t WHERE t.person_id = p.id)
-             OR EXISTS (SELECT 1 FROM rankings r WHERE r.person_id = p.id)
-             OR EXISTS (SELECT 1 FROM interactions i WHERE i.person_id = p.id AND i.source = 'manual')) AS yours
-     FROM people p
-     WHERE EXISTS (SELECT 1 FROM sources s WHERE s.person_id = p.id AND s.external_id LIKE 'chat:%')
-       AND NOT EXISTS (SELECT 1 FROM sources s WHERE s.person_id = p.id AND s.external_id NOT LIKE 'chat:%')`,
+export async function unlinkedPeople(db: SQLiteDatabase): Promise<number[]> {
+  const rows = await db.getAllAsync<{ id: number }>(
+    `SELECT p.id FROM people p
+     WHERE NOT EXISTS (SELECT 1 FROM sources s WHERE s.person_id = p.id AND s.external_id NOT LIKE 'chat:%')
+       AND COALESCE(p.phone, '') = '' AND COALESCE(p.email, '') = ''`,
   );
-  return { removable: rows.filter((r) => !r.yours).map((r) => r.id), kept: rows.filter((r) => r.yours).map((r) => r.id) };
+  return rows.map((r) => r.id);
 }
 
 /** Delete people (and everything attached to them). */

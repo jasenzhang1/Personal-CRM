@@ -11,7 +11,7 @@ import { nameReviewList } from '@/db/names';
 import { photoStatus } from '@/db/photos';
 import { listDuplicates, mergePeople, richness } from '@/db/merge';
 import { MergeForm, PersonMini } from './Duplicates';
-import { allCities, chatOnlyPeople, deletePeople, getSetting, setArchived, setCity, setSetting, setTags } from '@/db/people';
+import { allCities, deletePeople, getSetting, setArchived, setCity, setSetting, setTags, unlinkedPeople } from '@/db/people';
 import { looksLikeOrganization } from '@/lib/orgs';
 import { useQuery, useStore } from '@/lib/store';
 
@@ -186,7 +186,7 @@ export function People() {
   const tags = useQuery(() => allTags(db), []);
   const cities = useQuery(() => allCities(db), []);
   const photoInfo = useQuery(() => photoStatus(db), []);
-  const chatOnly = useQuery(() => chatOnlyPeople(db), []);
+  const unlinked = useQuery(() => unlinkedPeople(db), []);
   // One column per source you've imported from, in a fixed order, so icons line up row to row.
   const sourceCols = useQuery(async () => {
     const used = new Set((await db.getAllAsync<{ source: string }>('SELECT DISTINCT source FROM sources')).map((r) => r.source));
@@ -404,19 +404,18 @@ export function People() {
           + Add person
         </Link>
       </PageHead>
-      {chatOnly && chatOnly.removable.length > 0 && (
+      {unlinked && unlinked.length > 0 && (
         <section className="card pad row-gap chat-only">
           <span className="grow small">
-            <strong>{chatOnly.removable.length.toLocaleString()} people were added from your chats</strong> and have no profile link (chats don’t include usernames).
-            Chats no longer add people.
-            {chatOnly.kept.length > 0 ? ` ${chatOnly.kept.length.toLocaleString()} more you’ve added notes, tags or a ranking to will be kept.` : ''}
+            <strong>{unlinked.length.toLocaleString()} people have no contact or profile link</strong>: no phone contact, Instagram, LinkedIn,
+            Facebook or Discord account, phone number or email. Most came from chats in older versions; chats no longer add people.
           </span>
           <button
             type="button"
             className="btn danger small"
             onClick={async () => {
-              if (!confirm(`Remove ${chatOnly.removable.length.toLocaleString()} people who only came from chats? This can't be undone.`)) return;
-              await deletePeople(db, chatOnly.removable);
+              if (!confirm(`Remove ${unlinked.length.toLocaleString()} people with no contact or profile link, including any notes, tags or rankings on them? This can't be undone.`)) return;
+              await deletePeople(db, unlinked);
               bump();
             }}
           >
