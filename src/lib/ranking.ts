@@ -215,8 +215,8 @@ export interface WebCandidate {
 
 /**
  * The next pair to ask about. Mixes widely: the first person is drawn at random, favouring
- * people you've compared least; the second is usually someone at a similar level (so the answer
- * says something), sometimes anyone at all, and never someone you just saw or a pair you've
+ * people you've compared least; the second is always someone close in score (so the answer
+ * actually tells the two apart), and never someone you just saw or a pair you've
  * already answered (unless there's no one else). With `focus`, that person is always in it and
  * opponents close in on their level as `focusAsked` grows.
  */
@@ -242,11 +242,20 @@ export function pickPair(
   const others = cands.filter((c) => c.id !== first.id);
   const unasked = others.filter((c) => !opts.asked.has(pairKey(first.id, c.id)));
   const pool = [unasked.filter((c) => !recent.has(c.id)), unasked, others].find((l) => l.length)!;
-  const spread = opts.focus !== undefined ? Math.max(0.8, 3 - 0.4 * (opts.focusAsked ?? 0)) : 2;
-  const second =
-    rng() < (opts.focus !== undefined ? 0.15 : 0.3)
-      ? pool[Math.floor(rng() * pool.length)]
-      : draw(pool, (c) => Math.exp(-Math.abs(c.score - first.score) / spread) / Math.sqrt(1 + c.n));
+  // Only people close in score: a question between two people far apart has an obvious answer
+  // and teaches nothing. Take everyone within `window` of the first person; if that's fewer than
+  // `nearest`, take the `nearest` closest instead. When placing one person, start a little wider
+  // (their estimate may be off) and close in as answers pin them down.
+  const asked = opts.focusAsked ?? 0;
+  const focusing = opts.focus !== undefined;
+  const window = focusing ? Math.max(0.5, 1.5 - 0.25 * asked) : 0.75;
+  const nearest = focusing ? Math.max(3, 6 - asked) : 4;
+  const dist = (c: WebCandidate) => Math.abs(c.score - first.score);
+  const sorted = [...pool].sort((x, y) => dist(x) - dist(y));
+  const within = sorted.filter((c) => dist(c) <= window);
+  const near = within.length >= nearest ? within : sorted.slice(0, nearest);
+  const spread = Math.max(0.25, window / 2);
+  const second = draw(near, (c) => Math.exp(-dist(c) / spread) / Math.sqrt(1 + c.n));
   if (!second) return null;
   return rng() < 0.5 ? [first.id, second.id] : [second.id, first.id];
 }

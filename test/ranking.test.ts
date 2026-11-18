@@ -101,6 +101,22 @@ test('the web: pairs are mixed widely, not the same few people over and over', (
   assert.equal(opponents.size, 7);
 });
 
+test('the web: pairs are always people close in score', () => {
+  const cands = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, score: 1 + (i % 90) / 10, n: 0 }));
+  const rng = seeded(11);
+  const asked = new Set<string>();
+  let recent: number[] = [];
+  const score = (id: number) => cands[id - 1].score;
+  for (let q = 0; q < 200; q++) {
+    const pair = pickPair(cands, { asked, recent, rng })!;
+    const gap = Math.abs(score(pair[0]) - score(pair[1]));
+    assert.ok(gap <= 0.75 + 1e-9, `asked about two people ${gap.toFixed(2)} apart`);
+    asked.add(pairKey(...pair));
+    recent = [...pair, ...recent].slice(0, 8);
+    for (const id of pair) cands[id - 1].n++;
+  }
+});
+
 test('the web in the database: answers saved once per pair, refit moves scores, merge and not-close clean up', async () => {
   const { recordComparison, refitWeb, listComparisons } = await import('../src/db/ranking.ts');
   const { mergePeople } = await import('../src/db/merge.ts');
