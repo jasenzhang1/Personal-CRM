@@ -154,7 +154,7 @@ function TagAdder({ person, allTags, onAdd }: { person: PersonListRow; allTags: 
 }
 
 export function People() {
-  const { db, bump } = useStore();
+  const { db, bump, editing } = useStore();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [tag, setTag] = useState('');
@@ -296,8 +296,8 @@ export function People() {
     created: { label: 'Added', mobileLabel: 'Added', width: '120px', min: 110, sortValue: (r) => r.created_at, render: (r) => formatDate(r.created_at.slice(0, 10)) },
   };
   const shownCols = COLUMN_ORDER.filter((k) => colKeys.includes(k)).map((k) => ({ key: k, ...columns[k] }));
-  const gridCols = ['44px', 'minmax(200px, 2.2fr)', ...shownCols.map((c) => c.width)].join(' ');
-  const tableMinWidth = 44 + 200 + shownCols.reduce((n, c) => n + c.min + 12, 0);
+  const gridCols = ['44px', 'minmax(200px, 2.2fr)', ...shownCols.map((c) => c.width), ...(editing ? ['44px'] : [])].join(' ');
+  const tableMinWidth = 44 + 200 + shownCols.reduce((n, c) => n + c.min + 12, 0) + (editing ? 56 : 0);
   const [city, setCityFilter] = useState('');
   const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
   const dupes = useQuery(async () => (await listDuplicates(db)).filter((p) => p.strong).length, []) ?? 0;
@@ -342,6 +342,14 @@ export function People() {
     if (c === null) return;
     await setCity(db, [...selected], c);
     setSelected(new Set());
+    bump();
+  };
+
+  /** Edit mode only, so it can still be undone with Discard until you press Save. */
+  const removePeople = async (ids: number[], label: string) => {
+    if (ids.length > 1 && !confirm(`Delete ${label} and everything attached to them? You can still undo with Discard until you press Save.`)) return;
+    await deletePeople(db, ids);
+    setSelected((s) => new Set([...s].filter((id) => !ids.includes(id))));
     bump();
   };
 
@@ -555,6 +563,16 @@ export function People() {
               Archive {selected.size || ''}
             </button>
           )}
+          {editing && (
+            <button
+              type="button"
+              className="btn danger small"
+              disabled={!selected.size}
+              onClick={() => removePeople([...selected], `${selected.size.toLocaleString()} ${selected.size === 1 ? 'person' : 'people'}`)}
+            >
+              🗑 Delete {selected.size || ''}
+            </button>
+          )}
         </div>
       )}
       {rows && rows.length > 0 && (
@@ -572,6 +590,7 @@ export function People() {
                   </span>
                 ),
               )}
+              {editing && <span role="columnheader" aria-label="Delete" />}
             </div>
             {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r, j) => {
               const i = pg * PAGE + j;
@@ -646,6 +665,13 @@ export function People() {
                       </span>
                     );
                   })}
+                  {editing && (
+                    <span role="cell" className="pt-cell pt-delete">
+                      <button type="button" className="btn ghost small icon-btn" title={`Delete ${r.name}`} aria-label={`Delete ${r.name}`} onClick={() => removePeople([r.id], r.name)}>
+                        🗑
+                      </button>
+                    </span>
+                  )}
                 </div>
               );
             })}

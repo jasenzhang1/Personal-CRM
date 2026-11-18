@@ -655,3 +655,6 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
 .cal-head .btn.ghost { font-size: 20px; line-height: 1; padding: 4px 12px; }
 .names-tools .input[type="search"] { min-width: 0; flex: 1 1 220px; }
 .score-locked { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pt-delete { margin-left: auto; }
+.pt-delete .icon-btn { padding: 4px 8px; opacity: 0.6; }
+.pt-delete .icon-btn:hover, .pt-delete .icon-btn:focus-visible { opacity: 1; color: var(--danger); background: var(--danger-soft); }
