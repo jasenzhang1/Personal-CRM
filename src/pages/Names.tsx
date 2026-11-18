@@ -9,6 +9,16 @@ import { useQuery, useStore } from '@/lib/store';
 
 const PAGE = 50;
 type Filter = 'suggested' | 'sure' | 'none' | 'all';
+type Order = 'default' | 'az' | 'shuffle';
+
+/** A fixed random spot for each person per shuffle, so saving one name doesn't reshuffle the rest. */
+const shuffleKey = (id: number, seed: number) => {
+  let h = (id * 2654435761 + seed * 40503) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 2246822507) >>> 0;
+  return Math.imul(h ^ (h >>> 13), 3266489909) >>> 0;
+};
+/** Letters and digits only, so "jackie.zhang_26" is found by "jackiezhang". */
+const squash = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]/gu, '');
 
 export function Names() {
   const { db, bump } = useStore();
@@ -16,6 +26,9 @@ export function Names() {
   const [page, setPage] = useState(0);
   const [edits, setEdits] = useState<Record<number, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [order, setOrder] = useState<Order>('default');
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9));
 
   const data = useQuery(async () => ({ rows: await nameReviewList(db), auto: (await getSetting(db, AUTO_NAMES_KEY)) !== '0' }));
   if (!data) return null;
@@ -24,7 +37,15 @@ export function Names() {
   const sure = rows.filter((r) => r.suggestion?.confidence === 'high');
   const suggested = rows.filter((r) => r.suggestion);
   const none = rows.filter((r) => !r.suggestion);
-  const shown = filter === 'sure' ? sure : filter === 'suggested' ? suggested : filter === 'none' ? none : rows;
+  const inTab = filter === 'sure' ? sure : filter === 'suggested' ? suggested : filter === 'none' ? none : rows;
+  const q = squash(query);
+  const matches = q ? inTab.filter((r) => [r.name, r.suggestion?.name ?? '', edits[r.id] ?? '', ...r.handles].some((t) => squash(t).includes(q))) : inTab;
+  const shown =
+    order === 'az'
+      ? [...matches].sort((a, b) => a.name.replace(/^[@._\s]+/, '').localeCompare(b.name.replace(/^[@._\s]+/, ''), undefined, { sensitivity: 'base' }))
+      : order === 'shuffle'
+        ? [...matches].sort((a, b) => shuffleKey(a.id, seed) - shuffleKey(b.id, seed))
+        : matches;
   const pg = Math.min(page, Math.max(0, Math.ceil(shown.length / PAGE) - 1));
 
   const value = (r: NameRow) => edits[r.id] ?? r.suggestion?.name ?? '';
@@ -115,8 +136,33 @@ export function Names() {
             ))}
           </div>
 
+          <div className="row-gap names-tools">
+            <input
+              className="input grow"
+              type="search"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(0); }}
+              placeholder="Find someone: name, username or suggestion"
+              aria-label="Find a name"
+            />
+            <select className="input" value={order} onChange={(e) => { setOrder(e.target.value as Order); setPage(0); }} aria-label="Order">
+              <option value="default">Usual order</option>
+              <option value="az">A–Z</option>
+              <option value="shuffle">Shuffled</option>
+            </select>
+            <button
+              type="button"
+              className="btn secondary"
+              title="Shuffle the list, to go through names in a random order"
+              onClick={() => { setOrder('shuffle'); setSeed(Math.floor(Math.random() * 1e9)); setPage(0); }}
+            >
+              🔀 Shuffle
+            </button>
+          </div>
+          {q && <p className="muted small">{shown.length.toLocaleString()} of {inTab.length.toLocaleString()} match “{query.trim()}”.</p>}
+
           {pageRows.length === 0 ? (
-            <Empty>Nothing here.</Empty>
+            <Empty>{q ? 'No one matches that.' : 'Nothing here.'}</Empty>
           ) : (
             <ul className="list card names-list">
               {pageRows.map((r) => (

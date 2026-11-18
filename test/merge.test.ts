@@ -250,3 +250,34 @@ test('nicknames: an English name matches a legal/Chinese name, and merging two r
   await mergePeople(db, a, b);
   assert.equal((await db.getFirstAsync('SELECT nickname FROM people WHERE id = ?', a)).nickname, null);
 });
+
+test('Facebook friend-links file: real profile links replace the name search, matched by name', async () => {
+  const { sourceLinks } = await import('../src/lib/sourceLinks.ts');
+  const { getSources } = await import('../src/db/people.ts');
+  const { parseFacebook, parseExportFile, parseMany, parseFacebookUrl, FB_LINKS_MARK } = await import('../src/sync/parsers.ts');
+  assert.equal(parseFacebookUrl('https://m.facebook.com/jane.doe?ref=bookmarks'), 'https://www.facebook.com/jane.doe');
+  assert.equal(parseFacebookUrl('facebook.com/profile.php?id=100012345678'), 'https://www.facebook.com/profile.php?id=100012345678');
+  assert.equal(parseFacebookUrl('jane.doe'), null);
+
+  const db = fakeDb();
+  await migrate(db);
+  await ingest(db, 'facebook', parseFacebook({ friends_v2: [{ name: 'Jane Doe', timestamp: 1600000000 }, { name: 'Bob Ng', timestamp: 1600000000 }] }));
+  const jane = (await db.getFirstAsync("SELECT id FROM people WHERE name = 'Jane Doe'")).id;
+  assert.match(sourceLinks(await getSources(db, jane)).facebook!, /search/);
+
+  const file = JSON.stringify({ kind: FB_LINKS_MARK, friends: [{ name: 'Jane Doe', url: 'https://www.facebook.com/jane.doe.77' }, { name: 'Bob Ng', url: 'https://www.facebook.com/profile.php?id=42' }] });
+  const r = parseExportFile('facebook_friend_links.json', file);
+  assert.equal(r.kind, 'facebook');
+  const res = await ingest(db, 'facebook', r.candidates);
+  assert.equal(res.added, 0);
+  assert.equal(res.maybeRenamed, 0);
+  assert.equal((await db.getFirstAsync('SELECT COUNT(*) n FROM people')).n, 2);
+  assert.equal(sourceLinks(await getSources(db, jane)).facebook, 'https://www.facebook.com/jane.doe.77');
+
+  // Dropped together with the official export, the links still come through.
+  const both = parseMany([
+    { name: 'your_friends.json', text: JSON.stringify({ friends_v2: [{ name: 'Amy Tran', timestamp: 1600000000 }] }) },
+    { name: 'facebook_friend_links.json', text: JSON.stringify({ kind: FB_LINKS_MARK, friends: [{ name: 'Amy Tran', url: 'https://facebook.com/amy.t' }] }) },
+  ]).bySource.get('facebook')!;
+  assert.deepEqual(both.map((c) => [c.handle, c.connectedOn]), [['https://www.facebook.com/amy.t', '2020-09-13']]);
+});

@@ -450,16 +450,22 @@ export interface ParsedBatch {
  */
 export function parseMany(entries: { name: string; text: string }[]): ParsedBatch {
   const bySource = new Map<SourceKind, Candidate[]>();
-  const seen = new Map<SourceKind, Set<string>>();
+  const seen = new Map<SourceKind, Map<string, Candidate>>();
   const files: ParsedBatch['files'] = [];
   for (const e of entries) {
     try {
       const r = parseExportFile(e.name, e.text);
       const list = bySource.get(r.kind) ?? [];
-      const ids = seen.get(r.kind) ?? new Set();
+      const ids = seen.get(r.kind) ?? new Map<string, Candidate>();
       for (const c of r.candidates) {
-        if (ids.has(c.externalId)) continue;
-        ids.add(c.externalId);
+        const had = ids.get(c.externalId);
+        if (had) {
+          // The same friend in two files (Facebook export + friend-links file): keep what each adds.
+          had.handle ??= c.handle;
+          had.connectedOn ??= c.connectedOn;
+          continue;
+        }
+        ids.set(c.externalId, c);
         list.push(c);
       }
       bySource.set(r.kind, list);
@@ -501,6 +507,11 @@ export function parseExportFile(fileName: string, text: string): ParseResult {
       json = JSON.parse(trimmed);
     } catch {
       throw new Error(`${fileName} is not valid JSON.`);
+    }
+    const links = parseFacebookFriendLinks(json);
+    if (links) {
+      if (!links.length) throw new Error(`${fileName}: no friends in it. Run the bookmark again on your full friends list.`);
+      return { kind: 'facebook', candidates: links };
     }
     if (looksLikeDiscord(json)) return { kind: 'discord', candidates: parseDiscord(json) };
     const book = parseAddressBook(json);
@@ -544,6 +555,43 @@ function googleCity(addresses?: { city?: string; region?: string; type?: string 
     if (city) return city;
   }
   return undefined;
+}
+
+/** Marks facebook_friend_links.json (from the bookmark in lib/fbFriendLinks) so the importer recognizes it. */
+export const FB_LINKS_MARK = 'personal-crm/facebook-friend-links';
+
+/** A Facebook profile link in any form (m., ?ref=…, profile.php?id=…) → its plain https://www.facebook.com/… form; null if not one. */
+export function parseFacebookUrl(input: string): string | null {
+  const s = input.trim().replace(/^(https?:\/\/)?((www|m|web|mbasic)\.)?(facebook|fb)\.com\//i, '');
+  if (s === input.trim()) return null; // not a facebook.com link
+  const id = /^profile\.php\?(?:.*&)?id=(\d+)/i.exec(s);
+  if (id) return `https://www.facebook.com/profile.php?id=${id[1]}`;
+  const people = /^people\/[^/?#]+\/(\d+)/i.exec(s);
+  if (people) return `https://www.facebook.com/profile.php?id=${people[1]}`;
+  const user = s.replace(/[/?#].*$/, '');
+  return /^[A-Za-z0-9.\-]{2,50}$/.test(user) && !/^(search|groups|pages|events|watch|marketplace|login|share)$/i.test(user)
+    ? `https://www.facebook.com/${user}`
+    : null;
+}
+
+/**
+ * facebook_friend_links.json from the "Save Facebook friend links" bookmark (see lib/fbFriendLinks).
+ * Keyed by name like the official export, so the same friend matches and just gains their link.
+ * Returns null when the file is something else.
+ */
+export function parseFacebookFriendLinks(json: unknown): Candidate[] | null {
+  const j = json as { kind?: unknown; friends?: unknown } | null;
+  if (!j || typeof j !== 'object' || j.kind !== FB_LINKS_MARK || !Array.isArray(j.friends)) return null;
+  const seen = new Set<string>();
+  const out: Candidate[] = [];
+  for (const f of j.friends as { name?: unknown; url?: unknown }[]) {
+    const name = typeof f?.name === 'string' ? f.name.trim() : '';
+    const url = typeof f?.url === 'string' ? parseFacebookUrl(f.url) : null;
+    if (!name || !url || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ source: 'facebook', externalId: name.toLowerCase(), name, handle: url });
+  }
+  return out;
 }
 
 /* ---------------- Facebook in HTML format ---------------- */

@@ -312,7 +312,7 @@ export async function deletePeople(db: SQLiteDatabase, ids: number[]) {
   await db.withTransactionAsync(async () => {
     for (const id of ids) {
       for (const t of ['sources', 'stage_events', 'person_tags', 'interactions', 'rankings']) await db.runAsync(`DELETE FROM ${t} WHERE person_id = ?`, id);
-      await db.runAsync('DELETE FROM not_duplicates WHERE a = ? OR b = ?', id, id);
+      for (const t of ['not_duplicates', 'comparisons']) await db.runAsync(`DELETE FROM ${t} WHERE a = ? OR b = ?`, id, id);
       await db.runAsync('DELETE FROM people WHERE id = ?', id);
     }
   });
