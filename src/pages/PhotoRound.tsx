@@ -67,7 +67,18 @@ export function PhotoRound() {
       await notePhotosUpdated(db);
       const after = (await photoStatus(db)).withPhoto;
       setFetching(null);
-      setFetchResult(`Found ${(after - before).toLocaleString()} new ${after - before === 1 ? 'picture' : 'pictures'} (${parts.join(' · ')}).`);
+      const found = after - before;
+      const total = (await photoStatus(db)).total;
+      const withEmail = (await db.getFirstAsync<{ n: number }>("SELECT COUNT(*) AS n FROM people WHERE status != 'archived' AND email LIKE '%@%'"))?.n ?? 0;
+      // Explain a small result instead of leaving it looking broken.
+      const why: string[] = [];
+      if (withEmail < total / 5)
+        why.push(`Gravatar needs an email address, and only ${withEmail.toLocaleString()} of your ${total.toLocaleString()} people have one (Instagram and LinkedIn exports don’t include emails)`);
+      if (!googleId) why.push('Google contact photos need “Sync with Google” set up on the Import page');
+      setFetchResult(
+        `Found ${found.toLocaleString()} new ${found === 1 ? 'picture' : 'pictures'} (${parts.join(' · ')}).` +
+          (found === 0 && why.length ? ` That’s expected: ${why.join('; ')}. Most pictures will come from the Instagram/LinkedIn round below.` : ''),
+      );
       setRound((r) => r + 1);
       bump();
     }
