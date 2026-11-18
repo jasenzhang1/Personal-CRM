@@ -5,7 +5,23 @@ import type { SQLiteDatabase, SqlParam } from './types';
 /**
  * SQLite running in the browser (sql.js / WebAssembly), persisted to IndexedDB.
  * Every write schedules a save; other open tabs are told to reload.
+ *
+ * Edit mode: once `lock()` is called (after startup), changes are refused until `beginEdit()`.
+ * While editing, changes stay in memory only: `saveEdit()` saves them (and lets Google Drive sync
+ * upload them), `discardEdit()` puts back the data from when editing started. View preferences in
+ * the settings table (columns, sort, filters) can always be changed.
  */
+
+export class ReadOnlyError extends Error {
+  constructor() {
+    super('Turn on Edit mode to make changes.');
+    this.name = 'ReadOnlyError';
+  }
+}
+
+/** Writes that only touch view preferences, allowed outside edit mode. */
+const settingsOnly = (sql: string) => /^\s*(INSERT(\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+settings\b/i.test(sql);
+const harmless = (sql: string) => /^\s*(SELECT|PRAGMA)\b/i.test(sql);
 
 const IDB_NAME = 'personal-crm';
 const IDB_STORE = 'files';
@@ -48,6 +64,14 @@ export class BrowserDb implements SQLiteDatabase {
   onWrite: () => void = () => {};
   /** Called when the browser refused to save (storage full, private mode…). Changes stay in memory and are retried. */
   onSaveError: (e: unknown) => void = () => {};
+  /** Called when edit mode turns on or off, or the first unsaved edit is made. */
+  onEditChange: () => void = () => {};
+
+  private locked = false;
+  private snapshot: Uint8Array | null = null;
+  private draftChanged = false;
+  /** Writes the app makes itself (migrating a downloaded copy) are let through while locked. */
+  private systemDepth = 0;
 
   private constructor(private sql: Awaited<ReturnType<typeof initSqlJs>>, private db: Database) {
     this.db.exec('PRAGMA foreign_keys = ON');
@@ -63,6 +87,11 @@ export class BrowserDb implements SQLiteDatabase {
     // Saving is asynchronous and browsers don't wait for it when a page closes, so if a change
     // hasn't been saved yet, start saving and ask "Leave site?" (only in that brief moment).
     addEventListener('beforeunload', (e) => {
+      if (this.draftChanged) {
+        e.preventDefault(); // unsaved edits: ask "Leave site?"
+        e.returnValue = '';
+        return;
+      }
       if (!this.dirty && !this.saving) return;
       void this.flush();
       e.preventDefault();
@@ -80,6 +109,7 @@ export class BrowserDb implements SQLiteDatabase {
   }
 
   private async reloadFromStorage() {
+    if (this.editing) return; // keep your edits; saving them replaces the other tab's copy
     const bytes = await loadBytes();
     if (!bytes) return;
     this.db.close();
@@ -88,6 +118,14 @@ export class BrowserDb implements SQLiteDatabase {
   }
 
   private wrote(changed = true) {
+    if (this.editing) {
+      // Kept in memory until you press Save.
+      if (changed && !this.draftChanged) {
+        this.draftChanged = true;
+        this.onEditChange();
+      }
+      return;
+    }
     if (changed) this.onWrite();
     this.dirty = true;
     this.schedule(250);
@@ -144,23 +182,93 @@ export class BrowserDb implements SQLiteDatabase {
     }
   }
 
+  /* ---------------- edit mode ---------------- */
+
+  /** From now on, changes need edit mode. Called once startup migrations are done. */
+  lock() {
+    this.locked = true;
+  }
+
+  get editing() {
+    return this.snapshot !== null;
+  }
+
+  /** True while editing once something has changed since edit mode turned on. */
+  get hasEdits() {
+    return this.draftChanged;
+  }
+
+  beginEdit() {
+    if (this.editing) return;
+    this.snapshot = this.exportFile();
+    this.draftChanged = false;
+    this.onEditChange();
+  }
+
+  /** Save everything changed in edit mode, and leave edit mode. */
+  async saveEdit() {
+    if (!this.editing) return;
+    const changed = this.draftChanged;
+    this.snapshot = null;
+    this.draftChanged = false;
+    this.onEditChange();
+    if (!changed) return;
+    this.onWrite();
+    this.dirty = true;
+    await this.flush();
+  }
+
+  /** Throw away everything changed in edit mode, and leave edit mode. */
+  discardEdit() {
+    if (!this.snapshot) return;
+    this.db.close();
+    this.db = new this.sql.Database(this.snapshot);
+    this.db.exec('PRAGMA foreign_keys = ON');
+    this.snapshot = null;
+    this.draftChanged = false;
+    this.onEditChange();
+  }
+
+  /** Run the app's own writes (migrating a downloaded copy) whether or not edit mode is on. */
+  async system<T>(fn: () => Promise<T>): Promise<T> {
+    this.systemDepth++;
+    try {
+      return await fn();
+    } finally {
+      this.systemDepth--;
+    }
+  }
+
+  private get writable() {
+    return !this.locked || this.editing || this.systemDepth > 0;
+  }
+
+  private guard(sql: string) {
+    if (this.writable || this.inTx || harmless(sql) || settingsOnly(sql)) return;
+    throw new ReadOnlyError();
+  }
+
   /** Replace everything with a backup file. */
   async importFile(bytes: Uint8Array) {
+    if (!this.writable) throw new ReadOnlyError();
     const next = new this.sql.Database(bytes);
     next.exec('SELECT count(*) FROM people'); // throws if this isn't a CRM backup
     this.db.close();
     this.db = next;
     this.db.exec('PRAGMA foreign_keys = ON');
+    if (this.editing && this.systemDepth === 0) return this.wrote();
     this.dirty = true;
     await this.flush();
   }
 
   async execAsync(sql: string) {
+    this.guard(sql);
     this.db.exec(sql);
     this.wrote(!/^\s*PRAGMA foreign_keys\s*=\s*ON;?\s*$/i.test(sql));
   }
 
   async runAsync(sql: string, ...params: (SqlParam | SqlParam[])[]) {
+    this.guard(sql);
     this.db.run(sql, flat(params));
     const changes = this.db.getRowsModified();
     const lastInsertRowId = Number(this.db.exec('SELECT last_insert_rowid()')[0]?.values[0][0] ?? 0);
@@ -185,6 +293,7 @@ export class BrowserDb implements SQLiteDatabase {
   }
 
   async withTransactionAsync(fn: () => Promise<void>) {
+    if (!this.writable) throw new ReadOnlyError();
     this.db.exec('BEGIN');
     this.inTx = true;
     try {

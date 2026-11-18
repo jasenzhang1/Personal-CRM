@@ -22,6 +22,10 @@ npm run dev        # http://localhost:5173 — the terminal also prints a Networ
 
 **Live site:** https://jasenzhang1.github.io/Personal-CRM/. Every push to `main` rebuilds it (see `.github/workflows/deploy.yml`). The site holds only code. Your contacts are stored in your browser, and in your own Google Drive if you turn on sync.
 
+## Edit mode
+
+The app opens view only. To change anything (edit a person, merge, delete, import, restore a backup), press **✎ Edit** at the top. Changes made in Edit mode stay in memory until you press **Save**, which saves them and turns Edit mode off. **Discard** puts everything back the way it was when you pressed Edit. Leaving the page with unsaved edits asks first. Google Drive sync waits while you're editing and uploads after Save. View settings (columns, sorting, filters) can be changed any time.
+
 ## Importing contacts
 
 The **Import & settings** page has a button for each source that opens the right export page, plus step-by-step instructions.
@@ -127,7 +131,7 @@ Every person has one **0–10 closeness score**, and every list sorts by it. The
 - **Then it keeps moving.** After you place someone, their score follows changes in how much you talk, at half speed. A 1-hour call pushes it up, and going quiet for months pulls it down. **Growing closer** and **Drifting apart** list the biggest moves.
 - **Big changes.** **Re-rank** places someone again. **Not close anymore** (on their page or during the game) drops them straight to 0.
 
-Chat counts come from the Instagram, Facebook (Messenger) and Discord exports when they include Messages. Only one-on-one chats count. Only daily message counts and call lengths are kept, never message text. A chat is matched to a person by an earlier link, then by Instagram username or Discord user ID, then by exact name. Then by the follower whose username or Instagram name fits. Chats never add people: a chat with no match is skipped, because chats don't include usernames and the person would have no profile link. If an older version added people from chats, a button on People removes them. Re-importing a newer export replaces the old counts instead of adding to them.
+Chat counts come from the Instagram, Facebook (Messenger) and Discord exports when they include Messages. Only one-on-one chats count. Only daily message counts and call lengths are kept, never message text. A chat is matched to a person by an earlier link, then by Instagram username or Discord user ID, then by exact name. Then by the follower whose username or Instagram name fits. Chats never add people: a chat with no match is skipped, because chats don't include usernames and the person would have no profile link. A button on People removes everyone with no contact or profile link (no imported account, phone number or email), such as people older versions added from chats. Re-importing a newer export replaces the old counts instead of adding to them.
 
 ## Where data lives
 

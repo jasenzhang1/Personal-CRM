@@ -154,6 +154,7 @@ class CloudSync {
 
   /** A restore from a backup file should replace what's in Drive too. */
   markChanged() {
+    if (this.db?.editing) return; // pressing Save uploads it
     this.db?.onWrite();
   }
 
@@ -188,6 +189,8 @@ class CloudSync {
   private async run(interactive: boolean) {
     const db = this.db;
     if (!db || !this.saved.enabled) return;
+    // A download would replace what you're editing. Pressing Save syncs.
+    if (db.editing) return;
     if (!this.saved.clientId) return this.set('error', 'Add your Google Client ID first.');
     if (!navigator.onLine) return this.set('error', 'You’re offline. Changes will sync when you’re back online.');
     this.set('syncing');
@@ -265,8 +268,10 @@ class CloudSync {
     }
     this.pulling = true;
     try {
-      await db.importFile(bytes);
-      await migrate(db);
+      await db.system(async () => {
+        await db.importFile(bytes);
+        await migrate(db);
+      });
       await db.flush();
     } finally {
       this.pulling = false;

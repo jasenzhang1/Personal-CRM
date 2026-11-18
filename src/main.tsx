@@ -13,6 +13,7 @@ root.render(<div className="boot">Loading…</div>);
 BrowserDb.open()
   .then(async (db) => {
     await migrate(db);
+    db.lock(); // changes need Edit mode from here on
     void cloud.start(db, () => db.onExternalChange());
     root.render(
       <StrictMode>
