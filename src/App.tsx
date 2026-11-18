@@ -1,5 +1,6 @@
 import { createHashRouter, NavLink, Outlet, RouterProvider, ScrollRestoration } from 'react-router';
 import { useStore } from './lib/store';
+import { cloud, useCloud } from './lib/cloud';
 import { Inbox } from './pages/Inbox';
 import { People } from './pages/People';
 import { PersonPage } from './pages/Person';
@@ -15,6 +16,7 @@ import { Sync } from './pages/Sync';
 
 function Layout() {
   const { inboxCount, proMode, saveError } = useStore();
+  const sync = useCloud();
   const links = [
     { to: '/', label: 'Inbox', icon: '📥', badge: inboxCount },
     { to: '/people', label: 'People', icon: '👥' },
@@ -42,6 +44,24 @@ function Layout() {
           <p className="notice err save-error" role="alert">
             ⚠ This browser refused to save your latest changes ({saveError}). They're kept while this tab stays open. Download a backup from
             Import & settings, and check you're not in a private window.
+          </p>
+        )}
+        {sync.status === 'signin' && (
+          <p className="notice cloud-notice row-gap">
+            <span className="grow">
+              ☁ {sync.pending ? 'You have changes that aren’t in Google Drive yet.' : 'Sign in to get your latest data from Google Drive.'}
+            </span>
+            <button className="btn primary small" onClick={() => void cloud.sync(true)}>
+              Sync now
+            </button>
+          </p>
+        )}
+        {sync.status === 'error' && sync.error && (
+          <p className="notice err cloud-notice row-gap">
+            <span className="grow">☁ Google Drive sync: {sync.error}</span>
+            <button className="btn danger small" onClick={() => void cloud.sync(true)}>
+              Try again
+            </button>
           </p>
         )}
         <Outlet />

@@ -44,6 +44,8 @@ export class BrowserDb implements SQLiteDatabase {
   onExternalChange: () => void = () => {};
   /** Called after each successful save to this browser. */
   onSaved: () => void = () => {};
+  /** Called on every change made in this tab (not on reloads or restores). */
+  onWrite: () => void = () => {};
   /** Called when the browser refused to save (storage full, private mode…). Changes stay in memory and are retried. */
   onSaveError: (e: unknown) => void = () => {};
 
@@ -85,7 +87,8 @@ export class BrowserDb implements SQLiteDatabase {
     this.db.exec('PRAGMA foreign_keys = ON');
   }
 
-  private wrote() {
+  private wrote(changed = true) {
+    if (changed) this.onWrite();
     this.dirty = true;
     this.schedule(250);
   }
@@ -127,6 +130,20 @@ export class BrowserDb implements SQLiteDatabase {
     return bytes;
   }
 
+  /** Number of people in a database file, or null if it isn't a CRM database. */
+  peopleIn(bytes: Uint8Array): number | null {
+    try {
+      const d = new this.sql.Database(bytes);
+      try {
+        return Number(d.exec('SELECT count(*) FROM people')[0]?.values[0][0] ?? 0);
+      } finally {
+        d.close();
+      }
+    } catch {
+      return null;
+    }
+  }
+
   /** Replace everything with a backup file. */
   async importFile(bytes: Uint8Array) {
     const next = new this.sql.Database(bytes);
@@ -140,14 +157,14 @@ export class BrowserDb implements SQLiteDatabase {
 
   async execAsync(sql: string) {
     this.db.exec(sql);
-    this.wrote();
+    this.wrote(!/^\s*PRAGMA foreign_keys\s*=\s*ON;?\s*$/i.test(sql));
   }
 
   async runAsync(sql: string, ...params: (SqlParam | SqlParam[])[]) {
     this.db.run(sql, flat(params));
     const changes = this.db.getRowsModified();
     const lastInsertRowId = Number(this.db.exec('SELECT last_insert_rowid()')[0]?.values[0][0] ?? 0);
-    this.wrote();
+    this.wrote(changes > 0);
     return { changes, lastInsertRowId };
   }
 
