@@ -20,7 +20,7 @@ npm run dev        # http://localhost:5173 — the terminal also prints a Networ
 
 `npm run build` writes a static site to `dist/`. You can host it on any static host (GitHub Pages, Netlify, Vercel, Cloudflare Pages) with no server or rewrites needed.
 
-**Live site:** https://jasenzhang1.github.io/Personal-CRM/. Every push to `main` rebuilds it (see `.github/workflows/deploy.yml`). The site holds only code. Your contacts stay in whichever browser you use it in.
+**Live site:** https://jasenzhang1.github.io/Personal-CRM/. Every push to `main` rebuilds it (see `.github/workflows/deploy.yml`). The site holds only code. Your contacts are stored in your browser, and in your own Google Drive if you turn on sync.
 
 ## Importing contacts
 
@@ -126,7 +126,18 @@ Chat counts come from the Instagram, Facebook (Messenger) and Discord exports wh
 
 ## Where data lives
 
-Everything is stored in a SQLite database inside your browser (IndexedDB), on that device only. Nothing is uploaded. Each address is its own separate storage: `http://localhost:5173` and the Network address (`http://192.168…:5173`) don't share data, and neither do different browsers or devices. To move data, use **Download backup** and then **Restore from backup**. Clearing the browser's site data erases it, so back up now and then. If the browser ever refuses to save, a red warning appears.
+Everything is stored in a SQLite database inside your browser (IndexedDB), on that device.
+
+### Sync across devices (Google Drive)
+
+To use the same data on your phone and computer, turn on **Sync across devices** at the bottom of Import & settings. One copy of the database is kept in the hidden app-data folder of your own Google Drive. Only this app can open that folder, and the app can't see your other files.
+
+- One-time setup: the same Google Client ID as *Sync with Google*. In Google Cloud, also enable the **Google Drive API**, and add every address you use (for example `https://jasenzhang1.github.io`) under **Authorized JavaScript origins**.
+- Turn it on on your computer first, so your data is uploaded. Then use **Copy setup link for another device**, open that link on your phone, and tap **Turn on sync**.
+- Changes upload a few seconds after you make them. Other devices download them when you open or switch back to the site. Google sign-in lasts an hour, so after that a **Sync now** bar asks for a tap.
+- If two devices both changed things since they last synced, you choose which copy to keep. The other copy is downloaded as a backup file, so nothing is lost.
+
+Without sync, nothing is uploaded. Each address is its own separate storage: `http://localhost:5173` and the Network address (`http://192.168…:5173`) don't share data, and neither do different browsers or devices. To move data, use **Download backup** and then **Restore from backup**. Clearing the browser's site data erases it, so back up now and then. If the browser ever refuses to save, a red warning appears.
 
 ## Development
 

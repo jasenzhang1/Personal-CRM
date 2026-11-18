@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
+import { cloud, useCloud } from '@/lib/cloud';
 import { applyNameSuggestions, AUTO_NAMES_KEY, nameReviewList } from '@/db/names';
 import { listDuplicates } from '@/db/merge';
 import { PageHead, SourceBadge } from '@/components/ui';
@@ -162,6 +163,22 @@ export function Sync() {
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
+  const [params, setParams] = useSearchParams();
+
+  const saveClientId = async (id: string) => {
+    await setSetting(db, 'google_client_id', id.trim() || null);
+    cloud.setClientId(id);
+    bump();
+  };
+
+  // A setup link from another device ("#/sync?gclient=…") fills in the Client ID.
+  useEffect(() => {
+    const id = params.get('gclient');
+    if (!id) return;
+    setParams({}, { replace: true });
+    if (/\.apps\.googleusercontent\.com$/.test(id)) void saveClientId(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const status = useQuery(async () => {
     const counts = new Map(
@@ -276,6 +293,7 @@ export function Sync() {
     try {
       await db.importFile(new Uint8Array(await f.arrayBuffer()));
       await migrate(db); // older backups get the newer columns
+      cloud.markChanged(); // and replace what's in Google Drive
       bump();
       alert('Backup restored.');
     } catch {
@@ -363,10 +381,7 @@ export function Sync() {
         busy={busy === 'google'}
         status={sourceStatus('google')}
         onSync={syncGoogle}
-        onSaveClientId={async (id) => {
-          await setSetting(db, 'google_client_id', id.trim() || null);
-          bump();
-        }}
+        onSaveClientId={saveClientId}
       />
 
       <div className="howto-grid">
@@ -442,8 +457,9 @@ export function Sync() {
         <h2 className="card-title">Your data</h2>
         <p className="muted">
           {totals ? `${totals.people} people. ` : ''}
-          Everything is stored privately in this browser on this device. Nothing is uploaded. To move to another device or
-          browser, download a backup and restore it there. Clearing your browser's site data erases it, so download a backup now and then.
+          Everything is stored in this browser on this device. Turn on Google Drive sync below to see the same data on your
+          phone and computer. Or download a backup and restore it on the other device. Clearing your browser's site data
+          erases what's stored here, so keep sync on or download a backup now and then.
         </p>
         <div className="row-gap">
           <button className="btn secondary" onClick={downloadBackup}>
@@ -465,7 +481,120 @@ export function Sync() {
           />
         </div>
       </section>
+
+      <DriveCard clientId={status?.googleClientId ?? ''} onSaveClientId={saveClientId} />
     </div>
+  );
+}
+
+function DriveCard({ clientId: dbClientId, onSaveClientId }: { clientId: string; onSaveClientId: (id: string) => Promise<void> }) {
+  const sync = useCloud();
+  const clientId = sync.clientId || dbClientId;
+  const [draft, setDraft] = useState('');
+  const [copied, setCopied] = useState(false);
+  const origin = location.origin;
+  const setupLink = `${origin}${location.pathname}#/sync?gclient=${encodeURIComponent(clientId)}`;
+  const busy = sync.status === 'syncing';
+  const ago = sync.lastSync ? new Date(sync.lastSync).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null;
+
+  return (
+    <section className="card pad stack drive-card">
+      <header className="source-head">
+        <span className="source-icon">☁</span>
+        <h2 className="card-title grow">Sync across devices (Google Drive)</h2>
+        {sync.enabled && <span className="tag live">On</span>}
+      </header>
+      <p className="muted small">
+        Keeps one copy of your data in a hidden folder in your own Google Drive that only this app can open. Changes upload a
+        few seconds after you make them. Other devices pick them up when you open or switch back to the site. Turn it on
+        here, and then on each phone or computer you use.
+      </p>
+
+      {sync.enabled ? (
+        <>
+          <div className="cloud-status small">
+            {busy ? (
+              <span>Syncing…</span>
+            ) : sync.status === 'signin' ? (
+              <span>Google sign-in has expired (it lasts an hour). Tap Sync now.</span>
+            ) : sync.status === 'error' ? (
+              <span className="err-text">{sync.error}</span>
+            ) : (
+              <span className="muted">
+                {sync.pending ? 'Changes waiting to upload. ' : ''}
+                {ago ? `Last synced ${ago}.` : 'Not synced yet.'} {sync.lastAction}
+              </span>
+            )}
+          </div>
+          <div className="row-gap">
+            <button className="btn primary" disabled={busy} onClick={() => void cloud.sync(true)}>
+              {busy ? 'Syncing…' : 'Sync now'}
+            </button>
+            <button
+              className="btn ghost small"
+              onClick={() => {
+                void navigator.clipboard?.writeText(setupLink);
+                setCopied(true);
+              }}
+            >
+              {copied ? 'Copied ✓' : 'Copy setup link for another device'}
+            </button>
+            <button className="btn ghost small" onClick={() => confirm('Stop syncing this device? Your data stays here and in Google Drive.') && cloud.disable()}>
+              Turn off
+            </button>
+          </div>
+          <p className="small muted">
+            To set up your phone, send yourself the setup link (it fills in the Client ID), open it on the phone, and tap{' '}
+            <b>Turn on sync</b>.
+          </p>
+        </>
+      ) : clientId ? (
+        <>
+          <div className="row-gap">
+            <button className="btn primary" onClick={() => void cloud.enable()}>
+              Turn on sync
+            </button>
+          </div>
+          <details className="setup">
+            <summary>Before the first time: two settings in Google Cloud</summary>
+            <ol className="steps">
+              <li>
+                Turn on the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">Google Drive API ↗</a> in your Personal CRM project → <b>Enable</b>.
+              </li>
+              <li>
+                Open your <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noreferrer">OAuth client ↗</a> and make sure{' '}
+                <code className="copy" onClick={() => navigator.clipboard?.writeText(origin)} title="Click to copy">{origin}</code> is under{' '}
+                <b>Authorized JavaScript origins</b>. Add each address you use the CRM at. Click <b>Save</b>.
+              </li>
+            </ol>
+            <p className="small muted">
+              When you turn sync on, Google asks to let Personal CRM “see, create and delete its own configuration data in your
+              Google Drive”. That's the hidden app folder. It can't see your other files.
+            </p>
+          </details>
+        </>
+      ) : (
+        <form
+          className="stack"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            await onSaveClientId(draft);
+          }}
+        >
+          <p className="small">
+            Sync uses the same Google Client ID as “Sync with Google” above. If you set that up on another device, paste the
+            Client ID here, or open the setup link from that device. Otherwise follow the one-time setup in the Gmail & Google
+            Contacts card first.
+          </p>
+          <div className="row-gap">
+            <input className="input grow" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="1234567890-abc123.apps.googleusercontent.com" spellCheck={false} />
+            <button className="btn primary" type="submit" disabled={!/\.apps\.googleusercontent\.com\s*$/.test(draft)}>
+              Save
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 
@@ -519,7 +648,8 @@ function GoogleCard({ clientId, busy, status, onSync, onSaveClientId }: {
               Open the <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">Google Cloud console ↗</a>, sign in with the Gmail account you want to sync, and create a project named <b>Personal CRM</b>.
             </li>
             <li>
-              Turn on the <a href="https://console.cloud.google.com/apis/library/people.googleapis.com" target="_blank" rel="noreferrer">People API ↗</a> (make sure your new project is selected at the top) → <b>Enable</b>.
+              Turn on the <a href="https://console.cloud.google.com/apis/library/people.googleapis.com" target="_blank" rel="noreferrer">People API ↗</a> (make sure your new project is selected at the top) → <b>Enable</b>. To sync across devices, also turn on the{' '}
+              <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">Google Drive API ↗</a>.
             </li>
             <li>
               Open <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noreferrer">Google Auth Platform ↗</a> → <b>Get started</b>. App name: Personal CRM. Support email: yours. Audience: <b>External</b>. Contact email: yours. Agree and <b>Create</b>.
@@ -553,8 +683,8 @@ function GoogleCard({ clientId, busy, status, onSync, onSaveClientId }: {
           </form>
           <p className="small muted">
             When you first sync, Google will say “Google hasn't verified this app”. That's expected for your own personal
-            app: click <b>Continue</b>. Google sync works on the computer at {origin}. A phone opening the site through your
-            Wi-Fi address can't use it until the site is hosted online.
+            app: click <b>Continue</b>. Google sync works at {origin}. To use it at another address too (like the live
+            site on your phone), add that address to Authorized JavaScript origins as well.
           </p>
         </details>
       )}

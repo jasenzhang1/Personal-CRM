@@ -11,7 +11,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/contacts.other.readonly',
 ].join(' ');
 
-type TokenResponse = { access_token?: string; error?: string; error_description?: string };
+type TokenResponse = { access_token?: string; expires_in?: number | string; error?: string; error_description?: string };
 type TokenClient = { requestAccessToken: (o?: { prompt?: string }) => void };
 declare global {
   interface Window {
@@ -31,7 +31,7 @@ declare global {
 }
 
 let gisLoading: Promise<void> | null = null;
-function loadGis(): Promise<void> {
+export function loadGis(): Promise<void> {
   if (window.google?.accounts) return Promise.resolve();
   gisLoading ??= new Promise((resolve, reject) => {
     const s = document.createElement('script');
@@ -47,12 +47,14 @@ function loadGis(): Promise<void> {
   return gisLoading;
 }
 
-function getToken(clientId: string): Promise<string> {
+/** A short-lived (about 1 hour) access token. Opens Google's sign-in popup, so call it from a tap or click. */
+export function getToken(clientId: string, scope = SCOPES): Promise<{ token: string; expiresIn: number }> {
   return new Promise((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: SCOPES,
-      callback: (r) => (r.access_token ? resolve(r.access_token) : reject(new Error(r.error_description || r.error || 'Google sign-in failed'))),
+      scope,
+      callback: (r) =>
+        r.access_token ? resolve({ token: r.access_token, expiresIn: Number(r.expires_in) || 3600 }) : reject(new Error(r.error_description || r.error || 'Google sign-in failed')),
       error_callback: (e) =>
         reject(new Error(e.type === 'popup_closed' ? 'Google sign-in window was closed.' : e.message || 'Google sign-in failed (popup blocked?).')),
     });
@@ -82,7 +84,7 @@ async function fetchAll(url: string, key: 'connections' | 'otherContacts', token
 
 export async function fetchGoogleContacts(clientId: string): Promise<Candidate[]> {
   await loadGis();
-  const token = await getToken(clientId.trim());
+  const { token } = await getToken(clientId.trim());
   const [saved, other] = await Promise.all([
     fetchAll(
       'https://people.googleapis.com/v1/people/me/connections?pageSize=1000&personFields=names,emailAddresses,phoneNumbers,birthdays,organizations,photos,addresses',

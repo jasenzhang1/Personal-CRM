@@ -4,6 +4,7 @@ import { App } from './App';
 import { BrowserDb } from './db/browser';
 import { migrate } from './db/schema';
 import { StoreProvider } from './lib/store';
+import { cloud } from './lib/cloud';
 import './styles.css';
 
 const root = createRoot(document.getElementById('root')!);
@@ -12,6 +13,7 @@ root.render(<div className="boot">Loading…</div>);
 BrowserDb.open()
   .then(async (db) => {
     await migrate(db);
+    void cloud.start(db, () => db.onExternalChange());
     root.render(
       <StrictMode>
         <StoreProvider db={db}>
