@@ -214,7 +214,7 @@ const PROFILE_LABELS: Record<string, string> = { instagram: 'Instagram', linkedi
  * One side of a possible duplicate, laid out to make "is this the same person?" easy: a big photo
  * (paste or drop one in to save it), buttons to open each of their profiles, and the details we have.
  */
-function PersonMini({ p }: { p: PersonListRow }) {
+export function PersonMini({ p }: { p: PersonListRow }) {
   const { db, bump } = useStore();
   const [dragging, setDragging] = useState(false);
   const savePhoto = async (file: File | undefined) => {

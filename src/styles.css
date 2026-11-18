@@ -595,3 +595,12 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
 
 .cloud-notice { margin-bottom: 12px; }
 .cloud-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ---------- drag a row onto another to merge ---------- */
+@media (hover: hover) and (pointer: fine) {
+  .people-table .pt-row[draggable='true']:not(.pt-head) { cursor: grab; }
+}
+.pt-row.dragging { opacity: 0.4; }
+.pt-row.drop-target, .pt-row.drop-target > .pt-num, .pt-row.drop-target > .pt-person { background: color-mix(in srgb, var(--primary) 12%, var(--surface)) !important; }
+.pt-row.drop-target { outline: 2px dashed var(--primary); outline-offset: -2px; position: relative; }
+.pt-row.drop-target::after { content: 'Drop to merge'; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 700; color: var(--primary); background: var(--surface); padding: 2px 8px; border-radius: 999px; pointer-events: none; }

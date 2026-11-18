@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatBirthday, formatDate } from '@/lib/dates';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, PageHead, Pager, PhotoIndicator, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
-import { allTags, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
+import { Avatar, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhotoIndicator, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
+import { allTags, getPerson, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
 import { inferCircle } from '@/lib/relationship';
 import { loadScores } from '@/db/ranking';
 import { nameReviewList } from '@/db/names';
 import { photoStatus } from '@/db/photos';
-import { listDuplicates } from '@/db/merge';
+import { listDuplicates, mergePeople, richness } from '@/db/merge';
+import { MergeForm, PersonMini } from './Duplicates';
 import { allCities, chatOnlyPeople, deletePeople, getSetting, setArchived, setCity, setSetting, setTags } from '@/db/people';
 import { looksLikeOrganization } from '@/lib/orgs';
 import { useQuery, useStore } from '@/lib/store';
@@ -170,6 +171,11 @@ export function People() {
   };
   const [page, setPage] = useState(0);
   const [selecting, setSelecting] = useState(false);
+  // Drag one row onto another to merge them (computer only).
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dropId, setDropId] = useState<number | null>(null);
+  const [mergePair, setMergePair] = useState<{ keep: Row; drop: Row } | null>(null);
+  const [merging, setMerging] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ el: HTMLElement; row: Row } | null>(null);
 
@@ -565,7 +571,38 @@ export function People() {
                 </>
               );
               return (
-                <div key={r.id} className={`pt-row${r.status === 'archived' ? ' dim' : ''}`} role="row">
+                <div
+                  key={r.id}
+                  className={`pt-row${r.status === 'archived' ? ' dim' : ''}${dragId === r.id ? ' dragging' : ''}${dropId === r.id ? ' drop-target' : ''}`}
+                  role="row"
+                  draggable={!selecting}
+                  title={selecting ? undefined : 'Drag onto another person to merge them'}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/x-crm-person', String(r.id));
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDragId(r.id);
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setDropId(null);
+                  }}
+                  onDragOver={(e) => {
+                    if (dragId === null || dragId === r.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (dropId !== r.id) setDropId(r.id);
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropId((d) => (d === r.id ? null : d));
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = rows.find((x) => x.id === Number(e.dataTransfer.getData('application/x-crm-person')));
+                    setDragId(null);
+                    setDropId(null);
+                    if (from && from.id !== r.id) setMergePair({ keep: r, drop: from });
+                  }}
+                >
                   <span className="pt-num" role="cell">{i + 1}</span>
                   {selecting ? (
                     <label className="pt-person selectable" role="cell">
@@ -603,6 +640,47 @@ export function People() {
       )}
       {rows && <Pager page={pg} pageSize={PAGE} count={rows.length} onChange={setPage} />}
       {rows && rows.length === 0 && <Empty>{search || tag || city || circle !== 'any' ? 'No matches.' : 'No one here yet.'}</Empty>}
+
+      <Modal open={!!mergePair} title="Merge these two?" onClose={() => setMergePair(null)}>
+        {mergePair && (
+          <div className="stack">
+            <p className="small muted">
+              Everything from both is kept: blank details are filled in, notes are combined, and tags, chats, rankings and where they came from all move to one person.
+            </p>
+            <div className="dup-pair">
+              <PersonMini p={mergePair.drop} />
+              <span className="dup-and" aria-hidden>
+                →
+              </span>
+              <PersonMini p={mergePair.keep} />
+            </div>
+            <MergeForm
+              a={mergePair.keep}
+              b={mergePair.drop}
+              busy={merging}
+              onMerge={async (name) => {
+                setMerging(true);
+                try {
+                  // Keep whichever record has more on it; the name is your choice.
+                  const [ka, kb] = [await getPerson(db, mergePair.keep.id), await getPerson(db, mergePair.drop.id)];
+                  const keepFirst = !ka || !kb || (await richness(db, ka)) >= (await richness(db, kb));
+                  const [keepId, dropId2] = keepFirst ? [mergePair.keep.id, mergePair.drop.id] : [mergePair.drop.id, mergePair.keep.id];
+                  await mergePeople(db, keepId, dropId2, name);
+                  setMergePair(null);
+                  bump();
+                } finally {
+                  setMerging(false);
+                }
+              }}
+              extra={
+                <button type="button" className="btn ghost" onClick={() => setMergePair(null)}>
+                  Cancel
+                </button>
+              }
+            />
+          </div>
+        )}
+      </Modal>
 
       <LabelMenu
         anchor={menu?.el ?? null}

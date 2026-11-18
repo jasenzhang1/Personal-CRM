@@ -111,6 +111,7 @@ Tick *Also re-check people who already have a photo* to refresh pictures that ma
 - **⚙︎ Columns** shows or hides Type, Tags, Closeness, Connected on, Phone, Email, Company, City, How you met, Birthday, Last talked and Added. The choice is remembered. On wide tables the number and name stay pinned while you scroll sideways.
 - **Sort by any column**: click its header, and click again to reverse. Or use the Sort menu and ↑/↓ on a phone. Empty values always sort last, and birthdays sort by calendar date.
 - **Filter** by status, type, tag, city and platform, or search across names, tags, handles, companies, cities and notes.
+- **Drag one person onto another** to merge them (on a computer). A window shows both side by side to confirm, and you pick the name to keep.
 - **+ in the Tags column** adds a tag to someone. Pick one you've used before, or type a new one to create it.
 
 ## Ranking and closeness scores
