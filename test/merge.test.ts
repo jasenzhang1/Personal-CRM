@@ -223,3 +223,30 @@ test('people with no contact or profile link are found for removal; a typed-in p
   assert.deepEqual((await db.getAllAsync('SELECT name FROM people ORDER BY id')).map((x: any) => x.name), ['Real Follower', 'Typed In With Phone']);
   assert.equal((await db.getFirstAsync("SELECT COUNT(*) n FROM sources WHERE external_id = 'chat:c_1'")).n, 0);
 });
+
+test('nicknames: an English name matches a legal/Chinese name, and merging two real names keeps the other as a nickname', async () => {
+  const pairs = findDuplicates([
+    P(1, 'Wei Zhang', undefined, { nickname: 'David' }),
+    P(2, 'David Zhang', 'davidzhang99'),
+    P(3, 'Xiaoming Li', undefined, { nickname: 'Sean Li' }),
+    P(4, 'seanli', 'seanli'),
+  ]);
+  const has = (a: number, b: number) => pairs.find((p) => p.a === a && p.b === b);
+  assert.equal(has(1, 2)?.strong, true);
+  assert.ok(has(3, 4));
+
+  const db = fakeDb();
+  await migrate(db);
+  const keep = await createPerson(db, { name: 'Wei Zhang' });
+  const drop = await createPerson(db, { name: 'David Zhang' });
+  await mergePeople(db, keep, drop);
+  assert.deepEqual(await db.getFirstAsync('SELECT name, nickname FROM people WHERE id = ?', keep), { name: 'Wei Zhang', nickname: 'David' });
+
+  const { listPeople } = await import('../src/db/people.ts');
+  assert.deepEqual((await listPeople(db, { search: 'david' })).map((p) => p.name), ['Wei Zhang']);
+
+  const a = await createPerson(db, { name: 'Kevin Lee' });
+  const b = await createPerson(db, { name: 'Kevin Li' });
+  await mergePeople(db, a, b);
+  assert.equal((await db.getFirstAsync('SELECT nickname FROM people WHERE id = ?', a)).nickname, null);
+});

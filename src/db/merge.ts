@@ -1,18 +1,24 @@
 import type { SQLiteDatabase } from './types';
 import type { Person } from './people';
-import { findDuplicates, nameOptions, pairKey, type DupPair, type DupPerson } from '@/lib/duplicates';
+import { findDuplicates, nameKey, nameOptions, pairKey, type DupPair, type DupPerson } from '@/lib/duplicates';
 import { looksStandard } from '@/lib/names';
 
 /** Possible duplicate pairs, minus the ones you said aren't the same person. */
 export async function listDuplicates(db: SQLiteDatabase): Promise<DupPair[]> {
-  const people = await db.getAllAsync<Omit<DupPerson, 'sources'>>("SELECT id, name, email, phone FROM people WHERE status != 'archived'");
+  const people = await db.getAllAsync<Omit<DupPerson, 'sources'>>("SELECT id, name, nickname, email, phone FROM people WHERE status != 'archived'");
   const sources = await db.getAllAsync<DupPerson['sources'][number] & { person_id: number }>(
     'SELECT person_id, source, external_id, handle, display_name FROM sources',
   );
   const byPerson = new Map<number, DupPerson['sources']>();
   for (const s of sources) byPerson.set(s.person_id, [...(byPerson.get(s.person_id) ?? []), s]);
   const dismissed = new Set((await db.getAllAsync<{ a: number; b: number }>('SELECT a, b FROM not_duplicates')).map((r) => pairKey(r.a, r.b)));
-  return findDuplicates(people.map((p) => ({ ...p, sources: byPerson.get(p.id) ?? [] })), dismissed);
+  const renamed = await db.getAllAsync<{ a: number; b: number }>(
+    `SELECT o.person_id AS a, n.person_id AS b FROM account_renames r
+       JOIN sources o ON o.source = r.source AND o.external_id = r.old_id
+       JOIN sources n ON n.source = r.source AND n.external_id = r.new_id
+     WHERE r.applied = 0`,
+  );
+  return findDuplicates(people.map((p) => ({ ...p, sources: byPerson.get(p.id) ?? [] })), dismissed, renamed);
 }
 
 /** "Not the same person": stop suggesting this pair. */
@@ -31,7 +37,7 @@ export async function richness(db: SQLiteDatabase, p: Person) {
   return fields * 2 + (p.status === 'reviewed' ? 3 : 0) + (looksStandard(p.name) ? 2 : 0) + (extra?.n ?? 0);
 }
 
-const FILL: (keyof Person)[] = ['phone', 'email', 'birthday', 'photo', 'company', 'title', 'city', 'how_met', 'met_on', 'circle', 'stage', 'priority', 'deal_value', 'next_step', 'next_step_on'];
+const FILL: (keyof Person)[] = ['nickname', 'phone', 'email', 'birthday', 'photo', 'company', 'title', 'city', 'how_met', 'met_on', 'circle', 'stage', 'priority', 'deal_value', 'next_step', 'next_step_on'];
 const STATUS_RANK: Record<string, number> = { archived: 0, new: 1, backlog: 2, reviewed: 3 };
 
 /**
@@ -59,6 +65,15 @@ export async function mergePeople(db: SQLiteDatabase, keepId: number, dropId: nu
   if (name?.trim()) {
     patch.name = name.trim();
     patch.name_ok = 1;
+  }
+  // Two real names for one person ("Wei Zhang" + "David Zhang"): keep the one not chosen as their nickname.
+  const finalName = (patch.name as string | undefined) ?? keep.name;
+  const other = [keep.name, drop.name].find((n) => nameKey(n) !== nameKey(finalName) && looksStandard(n));
+  if (other && !keep.nickname && !drop.nickname && looksStandard(finalName)) {
+    const [o, f] = [nameKey(other).split(' '), nameKey(finalName).split(' ')];
+    const sameLast = o.length >= 2 && o[o.length - 1] === f[f.length - 1];
+    // Same first name ("Kevin Lee" / "Kevin Li") is a spelling difference, not a second name.
+    if (o[0] !== f[0]) patch.nickname = sameLast ? other.trim().split(/\s+/).slice(0, -1).join(' ') : other.trim();
   }
   patch.updated_at = new Date().toISOString();
 

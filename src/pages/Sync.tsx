@@ -148,7 +148,14 @@ const REFRESH_AFTER_DAYS = 60;
 type Log = { ok: boolean; text: string; link?: { to: string; label: string } };
 
 const describe = (r: IngestResult) =>
-  `${SOURCE_LABELS[r.source]}: ${r.total} found · ${r.added} new${r.added ? (r.baseline ? ' → Older connections' : ' → Inbox') : ''} · ${r.linked} matched to people you already had`;
+  `${SOURCE_LABELS[r.source]}: ${r.total} found · ${r.added} new${r.added ? (r.baseline ? ' → Older connections' : ' → Inbox') : ''} · ${r.linked} matched to people you already had` +
+  (r.relabeled ? ` · ${r.relabeled} changed their username (updated)` : '');
+
+/** Log line pointing to Duplicates when an import found accounts that may have been renamed. */
+const renameLog = (r: IngestResult): Log[] =>
+  r.maybeRenamed
+    ? [{ ok: true, text: `${SOURCE_LABELS[r.source]}: ${r.maybeRenamed} ${r.maybeRenamed === 1 ? 'person' : 'people'} may have changed their name or profile link.`, link: { to: '/duplicates', label: 'Check duplicates →' } }]
+    : [];
 
 declare global {
   interface Navigator {
@@ -237,7 +244,13 @@ export function Sync() {
       const batch = parseMany(entries.filter((e) => !isMessageEntry(e.name) && !isInstagramNameEntry(e.name)));
       const out: Log[] = notes.map((text) => ({ ok: false, text }));
       for (const f of batch.files) if (f.error) out.push({ ok: false, text: `${f.name}: ${f.error}` });
-      for (const [kind, candidates] of batch.bySource) out.push({ ok: true, text: describe(await ingest(db, kind, await shrinkPhotos(candidates))) });
+      // Follow lists first: they spot Instagram username changes and move those people to their
+      // new username, so the import below doesn't add them again as someone new.
+      out.push(...(await trackFollows(entries)));
+      for (const [kind, candidates] of batch.bySource) {
+        const r = await ingest(db, kind, await shrinkPhotos(candidates));
+        out.push({ ok: true, text: describe(r) }, ...renameLog(r));
+      }
       // Real names from Close Friends / follow requests first, then chats last, so chats can match
       // the people (and names) this same import just added.
       if (nameEntries.length) {
@@ -245,7 +258,6 @@ export function Sync() {
         if (named) out.push({ ok: true, text: `Found real names for ${named.toLocaleString()} Instagram ${named === 1 ? 'account' : 'accounts'} (from Close Friends and follow requests).` });
       }
       if (chatEntries.length) for (const r of await importChats(db, parseChats(chatEntries))) out.push({ ok: true, text: describeChats(r) });
-      out.push(...(await trackFollows(entries)));
       if (!out.length) out.push({ ok: false, text: 'Nothing to import in those files.' });
       else if (out.some((l) => l.ok)) out.push(...(await cleanNames()));
       addLog(out);

@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 12;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -171,6 +171,25 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
   if (current < 10) {
     // When you connected on that platform (LinkedIn "Connected on", Facebook friends since…).
     await addColumn(db, 'sources', 'connected_on', 'TEXT');
+  }
+
+  if (current < 11) {
+    await db.execAsync(`
+      -- Accounts that changed username/name between exports (see sync/renames.ts).
+      CREATE TABLE IF NOT EXISTS account_renames (
+        source TEXT NOT NULL,
+        old_id TEXT NOT NULL,             -- sources.external_id before
+        new_id TEXT NOT NULL,             -- and after
+        at TEXT NOT NULL,                 -- export date it was spotted in
+        applied INTEGER NOT NULL DEFAULT 0, -- 1 = moved over automatically; 0 = suggested on Duplicates
+        PRIMARY KEY (source, old_id, new_id)
+      );
+    `);
+  }
+
+  if (current < 12) {
+    // What else they go by: a nickname, or an English name next to a legal/Chinese name ("David" for Wei Zhang).
+    await addColumn(db, 'people', 'nickname', 'TEXT');
   }
 
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);

@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from '@/db/types';
 import { getSetting, setSetting, type Person } from '@/db/people';
 import type { Candidate, SourceKind } from './parsers';
+import { matchRenames, suggestRename, type Account } from './renames';
 
 export interface IngestResult {
   source: SourceKind;
@@ -9,6 +10,10 @@ export interface IngestResult {
   linked: number;  // matched to someone already in the CRM
   /** True on the first sync of a source: everyone goes to the backlog, not the inbox. */
   baseline: boolean;
+  /** Accounts whose username changed since last time (their handle, and name if it was the old username, were updated). */
+  relabeled: number;
+  /** Possible renames (an account vanished and one with the same connection date appeared), listed on Duplicates. */
+  maybeRenamed: number;
 }
 
 const digits = (s: string) => s.replace(/\D/g, '');
@@ -31,14 +36,16 @@ const nameKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates: Candidate[]): Promise<IngestResult> {
   const baselineKey = `baseline_${source}`;
   const baseline = (await getSetting(db, baselineKey)) === null;
-  const result: IngestResult = { source, total: candidates.length, added: 0, linked: 0, baseline };
+  const result: IngestResult = { source, total: candidates.length, added: 0, linked: 0, baseline, relabeled: 0, maybeRenamed: 0 };
 
   const people = await db.getAllAsync<Person>('SELECT * FROM people');
-  const known = new Map(
-    (await db.getAllAsync<{ external_id: string; person_id: number }>(
-      'SELECT external_id, person_id FROM sources WHERE source = ?', source,
-    )).map((r) => [r.external_id, r.person_id]),
+  const knownRows = await db.getAllAsync<{ external_id: string; person_id: number; handle: string | null; connected_on: string | null }>(
+    'SELECT external_id, person_id, handle, connected_on FROM sources WHERE source = ?', source,
   );
+  const known = new Map(knownRows.map((r) => [r.external_id, r.person_id]));
+  const handles = new Map(knownRows.map((r) => [r.external_id, r.handle]));
+  /** Accounts first seen in this import, for spotting renames. */
+  const fresh: Account[] = [];
 
   const linkedHere = new Set(known.values()); // person ids that already have an entry from this source
   const byEmail = new Map<string, Person>();
@@ -65,6 +72,23 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
       const knownId = known.get(c.externalId);
       let person = knownId !== undefined ? byId.get(knownId) : undefined;
       const isKnown = !!person;
+      if (!isKnown) fresh.push({ id: c.externalId, on: c.connectedOn ?? null, name: c.name });
+
+      // Same account, new username (Discord keeps the account id): update the handle, and their
+      // name too if it was still just the old username and you never confirmed it.
+      const oldHandle = handles.get(c.externalId);
+      if (person && c.handle && oldHandle !== undefined && oldHandle !== c.handle) {
+        await db.runAsync('UPDATE sources SET handle = ? WHERE source = ? AND external_id = ?', c.handle, source, c.externalId);
+        if (oldHandle && oldHandle.toLowerCase() !== c.handle.toLowerCase()) {
+          result.relabeled++;
+          const bare = oldHandle.replace(/^@/, '').toLowerCase();
+          const r = await db.runAsync(
+            'UPDATE people SET name = ?, updated_at = ? WHERE id = ? AND name_ok = 0 AND lower(name) IN (?, ?)',
+            c.name, t, person.id, bare, `@${bare}`,
+          );
+          if (r.changes) person.name = c.name;
+        }
+      }
 
       if (!person) {
         // A name match must be unambiguous, and must not already be a *different* entry from this
@@ -129,9 +153,38 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
     const dated = candidates.filter((c) => c.connectedOn);
     for (const c of dated)
       await db.runAsync('UPDATE sources SET connected_on = ? WHERE source = ? AND external_id = ? AND connected_on IS NULL', c.connectedOn!, source, c.externalId);
+    if (source === 'linkedin' || source === 'facebook') result.maybeRenamed = await spotRenames(db, source, candidates, knownRows, fresh, t);
     if (baseline) await setSetting(db, baselineKey, t);
     await setSetting(db, `last_sync_${source}`, t);
   });
 
   return result;
+}
+
+/**
+ * LinkedIn connections are known by profile URL and Facebook friends by name, so a new custom URL
+ * or a name change makes a second person. When a connection vanished from this export and a new
+ * one appeared with the same "connected on" date, suggest them as duplicates (it's never automatic:
+ * a name change and a new friend on the same day both happen).
+ */
+async function spotRenames(
+  db: SQLiteDatabase,
+  source: SourceKind,
+  candidates: Candidate[],
+  knownRows: { external_id: string; person_id: number; connected_on: string | null }[],
+  fresh: Account[],
+  t: string,
+): Promise<number> {
+  const accounts = knownRows.filter((r) => !r.external_id.startsWith('chat:'));
+  // Only a full list says who's gone: skip a partial file.
+  if (!accounts.length || candidates.length < accounts.length / 2) return 0;
+  const present = new Set(candidates.map((c) => c.externalId));
+  const names = new Map((await db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM people')).map((p) => [p.id, p.name]));
+  const gone = accounts.filter((r) => !present.has(r.external_id)).map((r) => ({ id: r.external_id, on: r.connected_on, name: names.get(r.person_id) }));
+  let n = 0;
+  for (const m of matchRenames(gone, fresh, true)) {
+    await suggestRename(db, source, m.oldId, m.newId, t.slice(0, 10));
+    n++;
+  }
+  return n;
 }

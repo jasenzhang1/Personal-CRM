@@ -7,6 +7,8 @@ export type PersonStatus = 'new' | 'backlog' | 'reviewed' | 'archived';
 export interface Person {
   id: number;
   name: string;
+  /** What else they go by: a nickname, or an English name alongside a legal/Chinese name. */
+  nickname?: string | null;
   phone: string | null;
   email: string | null;
   birthday: string | null;
@@ -55,7 +57,7 @@ export interface StageEvent {
 export const EDITABLE_FIELDS = [
   'name', 'phone', 'email', 'birthday', 'company', 'title', 'how_met', 'met_on', 'notes',
   'closeness', 'follow_up', 'last_contacted', 'status', 'priority', 'deal_value', 'next_step', 'next_step_on',
-  'circle', 'photo', 'city',
+  'circle', 'photo', 'city', 'nickname',
 ] as const;
 export type EditableField = (typeof EDITABLE_FIELDS)[number];
 export type PersonPatch = Partial<Pick<Person, EditableField>>;
@@ -86,10 +88,10 @@ export async function listPeople(
   }
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
-    where.push(`(p.name LIKE ? OR p.company LIKE ? OR p.city LIKE ? OR p.how_met LIKE ? OR p.notes LIKE ?
+    where.push(`(p.name LIKE ? OR p.nickname LIKE ? OR p.company LIKE ? OR p.city LIKE ? OR p.how_met LIKE ? OR p.notes LIKE ?
                  OR EXISTS (SELECT 1 FROM person_tags t WHERE t.person_id = p.id AND t.tag LIKE ?)
                  OR EXISTS (SELECT 1 FROM sources s WHERE s.person_id = p.id AND s.handle LIKE ?))`);
-    params.push(q, q, q, q, q, q, q);
+    params.push(q, q, q, q, q, q, q, q);
   }
   if (opts.tag) {
     where.push('EXISTS (SELECT 1 FROM person_tags t WHERE t.person_id = p.id AND t.tag = ?)');
