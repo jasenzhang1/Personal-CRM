@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Avatar, Empty, PageHead, Pager, ScoreBadge } from '@/components/ui';
+import { Avatar, EditableScore, Empty, PageHead, Pager } from '@/components/ui';
 import { listPeople, type PersonListRow } from '@/db/people';
-import { listComparisons, loadScores, recordComparison, refitWeb, setPlacement } from '@/db/ranking';
+import { listComparisons, loadScores, recordComparison, refitWeb, setPlacement, setScoreByHand } from '@/db/ranking';
 import {
   assignRanks,
   cyclePairs,
@@ -100,6 +100,12 @@ export function Rank() {
     }
     assignRanks(scores);
     return { ...pool, scores };
+  };
+
+  /** You typed a score yourself on one of the lists. */
+  const saveScore = async (id: number, score: number) => {
+    await setScoreByHand(db, id, score, data?.scores.get(id)?.activity ?? 0);
+    bump();
   };
 
   const toOverview = (notice?: string) => {
@@ -360,7 +366,7 @@ export function Rank() {
                   </span>
                 </button>
                 <div className="person-right">
-                  <ScoreBadge score={data.scores.get(p.id)?.score ?? 0} />
+                  <EditableScore score={data.scores.get(p.id)?.score ?? 0} guess={!data.scores.get(p.id)?.placed} onSave={(n) => saveScore(p.id, n)} />
                 </div>
               </li>
             ))}
@@ -370,10 +376,10 @@ export function Rank() {
       </div>
 
       {growing.length > 0 && (
-        <MiniList title="Growing closer · you've talked a lot more lately" rows={growing} sub={(s) => `+${s.drift.toFixed(1)} since you placed them`} onRerank={rankOne} />
+        <MiniList title="Growing closer · you've talked a lot more lately" rows={growing} sub={(s) => `+${s.drift.toFixed(1)} since you placed them`} onRerank={rankOne} onSave={saveScore} />
       )}
       {drifting.length > 0 && (
-        <MiniList title="Drifting apart · reach out?" rows={drifting} sub={(s) => `${s.drift.toFixed(1)} since you placed them`} onRerank={rankOne} />
+        <MiniList title="Drifting apart · reach out?" rows={drifting} sub={(s) => `${s.drift.toFixed(1)} since you placed them`} onRerank={rankOne} onSave={saveScore} />
       )}
 
       {everyone.length === 0 ? (
@@ -393,7 +399,7 @@ export function Rank() {
                   </span>
                 </button>
                 <div className="person-right">
-                  <ScoreBadge score={s.score} guess={!s.placed} />
+                  <EditableScore score={s.score} guess={!s.placed} onSave={(n) => saveScore(p.id, n)} />
                   <button type="button" className="btn ghost small" onClick={() => rankOne(p.id)}>
                     {s.placed ? 'Re-rank' : 'Rank'}
                   </button>
@@ -408,7 +414,7 @@ export function Rank() {
   );
 }
 
-function MiniList({ title, rows, sub, onRerank }: { title: string; rows: { p: PersonListRow; s: ScoreInfo }[]; sub: (s: ScoreInfo) => string; onRerank: (id: number) => void }) {
+function MiniList({ title, rows, sub, onRerank, onSave }: { title: string; rows: { p: PersonListRow; s: ScoreInfo }[]; sub: (s: ScoreInfo) => string; onRerank: (id: number) => void; onSave: (id: number, score: number) => Promise<void> }) {
   return (
     <section>
       <h2 className="section-title">{title}</h2>
@@ -423,7 +429,7 @@ function MiniList({ title, rows, sub, onRerank }: { title: string; rows: { p: Pe
               </span>
             </Link>
             <div className="person-right">
-              <ScoreBadge score={s.score} />
+              <EditableScore score={s.score} onSave={(n) => onSave(p.id, n)} />
               <button type="button" className="btn ghost small" onClick={() => onRerank(p.id)}>Re-rank</button>
             </div>
           </li>
