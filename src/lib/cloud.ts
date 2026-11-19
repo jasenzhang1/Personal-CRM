@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { BrowserDb } from '@/db/browser';
 import { getSetting } from '@/db/people';
 import { migrate } from '@/db/schema';
-import { getToken, loadGis } from '@/sync/google';
+import { cachedToken, forgetToken, signIn, wantScopes } from '@/sync/google';
 import { DRIVE_SCOPE, DriveAuthError, download, findFile, upload } from '@/sync/drive';
 import { isoDate } from './dates';
 
@@ -40,8 +40,6 @@ interface Saved {
   baseVersion?: string;
   dirty?: boolean;
   lastSync?: string;
-  token?: string;
-  tokenExp?: number;
 }
 
 const KEY = 'crm.cloud';
@@ -76,6 +74,12 @@ class CloudSync {
   private lastCheck = 0;
   private listeners = new Set<() => void>();
   private state: CloudState = this.snapshot('idle', null, null);
+  constructor() {
+    wantScopes('drive', this.saved.enabled ? [DRIVE_SCOPE] : null);
+  }
+
+  /** Called after every sync attempt finishes (the daily contacts check hooks in here). */
+  onSynced: () => void = () => {};
 
   private snapshot(status: CloudStatus, error: string | null, lastAction: string | null): CloudState {
     const s = this.saved;
@@ -97,11 +101,17 @@ class CloudSync {
 
   private persist(patch: Partial<Saved>) {
     this.saved = { ...this.saved, ...patch };
+    wantScopes('drive', this.saved.enabled ? [DRIVE_SCOPE] : null);
     try {
       localStorage.setItem(KEY, JSON.stringify(this.saved));
     } catch {
       /* storage blocked: sync still works for this visit */
     }
+  }
+
+  /** Resolves once any sync in progress is done, so other writers don't race a download. */
+  idle(): Promise<void> {
+    return this.running ?? Promise.resolve();
   }
 
   subscribe = (l: () => void) => {
@@ -148,7 +158,7 @@ class CloudSync {
   }
 
   disable() {
-    this.persist({ enabled: false, token: undefined, tokenExp: undefined });
+    this.persist({ enabled: false });
     this.set('off', null, null);
   }
 
@@ -171,19 +181,16 @@ class CloudSync {
       if (this.again) {
         this.again = false;
         void this.sync(false);
-      }
+      } else this.onSynced();
     });
     return this.running;
   }
 
   private async token(interactive: boolean): Promise<string | null> {
-    const s = this.saved;
-    if (s.token && (s.tokenExp ?? 0) > Date.now() + 60_000) return s.token;
-    if (!interactive || !s.clientId) return null;
-    await loadGis();
-    const { token, expiresIn } = await getToken(s.clientId, DRIVE_SCOPE);
-    this.persist({ token, tokenExp: Date.now() + expiresIn * 1000 });
-    return token;
+    const cached = cachedToken([DRIVE_SCOPE]);
+    if (cached) return cached;
+    if (!interactive || !this.saved.clientId) return null;
+    return signIn(this.saved.clientId, [DRIVE_SCOPE]);
   }
 
   private async run(interactive: boolean) {
@@ -203,7 +210,7 @@ class CloudSync {
       this.set('idle', null, action);
     } catch (e) {
       if (e instanceof DriveAuthError) {
-        this.persist({ token: undefined, tokenExp: undefined });
+        forgetToken();
         return this.set('signin', interactive ? e.message : null);
       }
       console.error('Google Drive sync failed', e);

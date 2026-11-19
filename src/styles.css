@@ -658,3 +658,9 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
 .pt-delete { margin-left: auto; }
 .pt-delete .icon-btn { padding: 4px 8px; opacity: 0.6; }
 .pt-delete .icon-btn:hover, .pt-delete .icon-btn:focus-visible { opacity: 1; color: var(--danger); background: var(--danger-soft); }
+
+/* Inbox: new phone contacts */
+.phone-auto { margin: 0 0 12px; }
+.phone-auto-card { margin-bottom: 16px; }
+.phone-auto-card .card-title { margin: 0 0 6px; }
+.linkish { background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; font: inherit; text-decoration: underline; }
