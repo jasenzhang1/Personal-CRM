@@ -43,6 +43,18 @@ Drop whole `.zip` exports as-is; only the contact lists inside are read. Instagr
 
 The **first** import from each source files everyone under **Older connections**. Later imports put only newly added people in the **Inbox**. The same person from several sources is merged by email, phone number, or an unambiguous name match. Imports only fill in blank fields and never overwrite what you wrote.
 
+### New phone contacts, automatically
+
+Add someone on your iPhone and they show up in the **Inbox** the next time you open the app, ready for how you met, notes and tags. No exporting.
+
+A website can't read your iPhone's contacts directly, so this goes through Gmail:
+
+1. iPhone: **Settings → Apps → Contacts → Contacts Accounts** → your Gmail account → turn on **Contacts**.
+2. **Settings → Apps → Contacts → Default Account** → **Gmail**. New contacts are now saved to Google too.
+3. Set up **Sync with Google** (Import & settings), then press **Turn on** in the card at the top of the Inbox.
+
+Whenever you open or return to the app, it checks your saved Google Contacts (not everyone you've emailed). It does this quietly every few minutes while a Google sign-in from the last hour is still good. After that, once a day, a bar at the top asks you to tap **Check now** (Google only opens its sign-in from a tap). That same tap also signs Google Drive sync back in. The first check files everyone already in Google under **Older connections**. The setting follows Drive sync to your other devices. Checks wait while Edit mode is on and run after you Save. Contacts saved to iCloud instead of Gmail still need the export above.
+
 ## Cleaning up names
 
 Instagram's followers and following lists only have usernames. Real names are read from your chats and from the smaller lists that include them (Close Friends, follow requests, recently unfollowed). Even so, after an import some people are named like `john.smith_99` or `jackiezhang26`. **Clean up names** (button on People, or the link after an import) suggests a proper "First Last" for each one. Suggestions come from the name they use in your chats, from fixing capitals ("JOHN SMITH"), and from splitting the username using common first and last names.

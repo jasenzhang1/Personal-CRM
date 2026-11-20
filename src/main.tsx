@@ -5,6 +5,7 @@ import { BrowserDb } from './db/browser';
 import { migrate } from './db/schema';
 import { StoreProvider } from './lib/store';
 import { cloud } from './lib/cloud';
+import { autoContacts } from './lib/autoContacts';
 import './styles.css';
 
 const root = createRoot(document.getElementById('root')!);
@@ -15,6 +16,7 @@ BrowserDb.open()
     await migrate(db);
     db.lock(); // changes need Edit mode from here on
     void cloud.start(db, () => db.onExternalChange());
+    autoContacts.start(db, () => db.onExternalChange());
     root.render(
       <StrictMode>
         <StoreProvider db={db}>

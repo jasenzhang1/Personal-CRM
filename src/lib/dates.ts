@@ -82,3 +82,15 @@ export function relativeDays(days: number): string {
   if (days === -1) return 'yesterday';
   return days > 0 ? `in ${days} days` : `${-days} days ago`;
 }
+
+/** "just now", "5 min ago", "3 h ago", "2 days ago" for an ISO time. */
+export function ago(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return 'never';
+  const min = Math.round((now - Date.parse(iso)) / 60_000);
+  if (!(min >= 1)) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return `${d} ${d === 1 ? 'day' : 'days'} ago`;
+}
