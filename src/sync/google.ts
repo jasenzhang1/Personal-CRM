@@ -63,7 +63,7 @@ export function getToken(clientId: string, scope = SCOPES): Promise<{ token: str
 }
 
 /*
- * One Google sign-in shared by Drive sync and the daily contacts check, so a single tap covers both.
+ * The Google sign-in for the daily contacts check.
  * Every sign-in asks for all the scopes the features you've turned on need; the token (about an
  * hour) is kept in localStorage so reopening the app within the hour needs no tap.
  */

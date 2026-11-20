@@ -20,7 +20,7 @@ function Layout() {
   const { inboxCount, proMode, saveError, editing, beginEdit, blocked, dismissBlocked } = useStore();
   const sync = useCloud();
   const auto = useAutoContacts();
-  // One tap signs in for both the contacts check and Drive sync, so show one bar, not two.
+  // The daily phone-contacts check needs a Google sign-in now and then.
   const askContacts = auto.status === 'signin';
   const links = [
     { to: '/', label: 'Inbox', icon: '📥', badge: inboxCount },
@@ -55,7 +55,7 @@ function Layout() {
         {askContacts && (
           <p className="notice cloud-notice row-gap">
             <span className="grow">
-              📱 {sync.status === 'signin' ? 'Check for new phone contacts and get your latest data from Google Drive.' : 'Check for contacts you’ve added on your phone.'}
+              📱 Check for contacts you’ve added on your phone.
             </span>
             <button className="btn primary small" onClick={() => void autoContacts.check(true)}>
               Check now
@@ -67,16 +67,6 @@ function Layout() {
             <span className="grow">📱 New phone contacts: {auto.error}</span>
             <button className="btn danger small" onClick={() => void autoContacts.check(true)}>
               Try again
-            </button>
-          </p>
-        )}
-        {sync.status === 'signin' && !askContacts && (
-          <p className="notice cloud-notice row-gap">
-            <span className="grow">
-              ☁ {sync.pending ? 'You have changes that aren’t in Google Drive yet.' : 'Sign in to get your latest data from Google Drive.'}
-            </span>
-            <button className="btn primary small" onClick={() => void cloud.sync(true)}>
-              Sync now
             </button>
           </p>
         )}

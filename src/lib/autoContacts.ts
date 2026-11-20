@@ -15,10 +15,10 @@ import { cloud } from './cloud';
  *
  * - quietly, at most every few minutes, while a Google sign-in from the last hour is still good;
  * - otherwise, once a day, a bar asks for one tap (Google sign-in can only open from a tap). That
- *   same tap also signs Google Drive sync back in.
+ *   same tap is all it takes.
  *
  * Only saved contacts are checked, not everyone you've emailed, so the Inbox stays about people.
- * The setting lives in the database, so it follows Google Drive sync to your other devices, and
+ * The setting lives in the database, so it follows GitHub sync to your other devices, and
  * the last-check time is shared too, so two devices don't both ask.
  */
 
@@ -73,7 +73,7 @@ class AutoContacts {
   start(db: BrowserDb, onChange: () => void) {
     this.db = db;
     this.onChange = onChange;
-    cloud.onSynced = () => void this.check(false); // a Drive download may have turned it on or brought a newer check time
+    cloud.onSynced = () => void this.check(false); // a GitHub download may have turned it on or brought a newer check time
     document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && void this.check(false));
     addEventListener('online', () => void this.check(false));
     setInterval(() => document.visibilityState === 'visible' && void this.check(false), 60_000);
@@ -127,8 +127,7 @@ class AutoContacts {
     this.set({ status: 'checking', error: null });
     try {
       token ??= await signIn(clientId, CONTACT_SCOPES);
-      // Signing in also covers Drive sync: let it catch up first, so new people go onto the latest copy.
-      if (interactive && cloud.getState().status === 'signin') void cloud.sync(false);
+      // Let GitHub sync catch up first, so new people go onto the latest copy.
       await cloud.idle();
       const candidates = await fetchSavedContacts(token);
       if (db.editing) return this.set({ status: 'idle' });

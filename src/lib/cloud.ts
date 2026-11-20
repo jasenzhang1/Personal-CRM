@@ -1,9 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { BrowserDb } from '@/db/browser';
 import { migrate } from '@/db/schema';
-import { cachedToken, forgetToken, signIn, wantScopes } from '@/sync/google';
-import { DRIVE_SCOPE, DriveAuthError, download, findFile, upload } from '@/sync/drive';
-import { isoDate } from './dates';
+import { checkRepo, download, findFile, GitHubAuthError, GitHubConflictError, upload, type GhRepo } from '@/sync/github';
 
 /**
  * Keeps this device's database in step with one copy committed to a private GitHub repo, so your
@@ -80,9 +78,6 @@ class CloudSync {
   private lastCheck = 0;
   private listeners = new Set<() => void>();
   private state: CloudState = this.snapshot('idle', null, null);
-  constructor() {
-    wantScopes('drive', this.saved.enabled ? [DRIVE_SCOPE] : null);
-  }
 
   /** Called after every sync attempt finishes (the daily contacts check hooks in here). */
   onSynced: () => void = () => {};
@@ -107,7 +102,6 @@ class CloudSync {
 
   private persist(patch: Partial<Saved>) {
     this.saved = { ...this.saved, ...patch };
-    wantScopes('drive', this.saved.enabled ? [DRIVE_SCOPE] : null);
     try {
       localStorage.setItem(KEY, JSON.stringify(this.saved));
     } catch {
@@ -199,17 +193,15 @@ class CloudSync {
       this.running = null;
       if (this.again) {
         this.again = false;
-        void this.sync(false);
+        void this.sync();
       } else this.onSynced();
     });
     return this.running;
   }
 
-  private async token(interactive: boolean): Promise<string | null> {
-    const cached = cachedToken([DRIVE_SCOPE]);
-    if (cached) return cached;
-    if (!interactive || !this.saved.clientId) return null;
-    return signIn(this.saved.clientId, [DRIVE_SCOPE]);
+  private repo(): GhRepo | null {
+    const [owner, repo] = (this.saved.repo ?? '').split('/');
+    return owner && repo ? { owner, repo, branch: this.saved.branch ?? 'main' } : null;
   }
 
   private async run() {
@@ -228,9 +220,10 @@ class CloudSync {
       this.persist({ lastSync: new Date().toISOString() });
       this.set('idle', null, action);
     } catch (e) {
-      if (e instanceof DriveAuthError) {
-        forgetToken();
-        return this.set('signin', interactive ? e.message : null);
+      if (e instanceof GitHubConflictError) {
+        // Another device committed at the same moment: go round again to pick up its version.
+        this.again = true;
+        return this.set('syncing');
       }
       if (!(e instanceof GitHubAuthError)) setTimeout(() => this.saved.dirty && void this.sync(), 30_000);
       console.error('GitHub sync failed', e);
