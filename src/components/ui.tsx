@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import type { Person } from '@/db/people';
 import { ReadOnlyError } from '@/db/browser';
 import { useStore } from '@/lib/store';
+import { appProfileUrl } from '@/lib/sourceLinks';
 
 export function Avatar({ name, photo, size = 40 }: { name: string; photo?: string | null; size?: number }) {
   const initials = name
@@ -351,6 +352,59 @@ export function SourceIcon({ source, href, size = 18, missing }: { source: strin
     >
       {icon}
     </span>
+  );
+}
+
+const PHONE_OS: 'ios' | 'android' | null =
+  typeof navigator === 'undefined'
+    ? null
+    : /android/i.test(navigator.userAgent)
+      ? 'android'
+      : /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+        ? 'ios'
+        : null;
+
+/**
+ * A big, tappable contact icon for the phone layout: calls for Contacts, and opens Instagram,
+ * LinkedIn and Facebook in their own app when it's installed (the website otherwise).
+ */
+export function ContactButton({ source, href, name }: { source: string; href: string; name?: string }) {
+  const [label, color] = SOURCE_STYLE[source] ?? [source, 'var(--muted)'];
+  const glyph = SOURCE_GLYPH[source];
+  const tel = href.startsWith('tel:');
+  const app = PHONE_OS ? appProfileUrl(source, href, PHONE_OS) : null;
+  const what = tel ? `Call ${name ?? ''}`.trim() : href.includes('facebook.com/search/') ? `Search ${label} for them` : `Open their ${label}`;
+  return (
+    <a
+      className="contact-btn"
+      style={{ color }}
+      href={app && PHONE_OS === 'android' ? app : href}
+      target={tel || app ? undefined : '_blank'}
+      rel="noreferrer"
+      title={what}
+      aria-label={what}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!app || PHONE_OS !== 'ios') return;
+        // Try the app; if the page is still showing a moment later, it isn't installed: use the website.
+        e.preventDefault();
+        const fallback = setTimeout(() => {
+          if (!document.hidden) location.href = href;
+        }, 1200);
+        const cancel = () => clearTimeout(fallback);
+        document.addEventListener('visibilitychange', cancel, { once: true });
+        addEventListener('pagehide', cancel, { once: true });
+        location.href = app;
+      }}
+    >
+      {glyph ? (
+        <svg width={22} height={22} viewBox="0 0 24 24" aria-hidden="true">
+          {glyph}
+        </svg>
+      ) : (
+        <span className="source-icon-text">{label.slice(0, 2)}</span>
+      )}
+    </a>
   );
 }
 

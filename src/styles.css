@@ -673,3 +673,32 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
 .phone-auto-card { margin-bottom: 16px; }
 .phone-auto-card .card-title { margin: 0 0 6px; }
 .linkish { background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* ---------- People on a phone: a compact list, not the squeezed table ---------- */
+.people-mobile { display: none; list-style: none; margin: 0; padding: 0; overflow: hidden; }
+.pm-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; min-height: 64px; }
+.pm-row + .pm-row { border-top: 1px solid var(--border); }
+.pm-row.dim { opacity: 0.5; }
+.pm-person { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none !important; }
+.pm-person input { width: 20px; height: 20px; flex: none; accent-color: var(--primary); }
+.pm-text { display: flex; flex-direction: column; min-width: 0; }
+.pm-name { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-icons { flex: none; display: flex; align-items: center; gap: 2px; }
+.contact-btn { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; text-decoration: none !important; -webkit-tap-highlight-color: transparent; }
+.contact-btn:active { background: color-mix(in srgb, currentColor 16%, transparent); }
+.mobile-only { display: none; }
+@media (max-width: 859px) {
+  .people-page .people-table { display: none; }
+  .people-mobile { display: block; }
+  .mobile-only { display: flex; }
+  .desktop-only { display: none !important; }
+  .filter-toggle { gap: 8px; align-items: center; }
+  .filter-toggle > .btn { flex: 1; }
+  .people-page .filter-row:not(.open) { display: none; }
+  .people-page .filter-row { flex-direction: column; align-items: stretch; }
+  /* The page's action buttons: one row you can swipe, instead of a wall of buttons. */
+  .people-page .page-actions { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; scrollbar-width: none; }
+  .people-page .page-actions::-webkit-scrollbar { display: none; }
+  .people-page .page-actions .btn { padding: 7px 12px; font-size: 14px; }
+}

@@ -44,3 +44,40 @@ export function sourceLinks(rows: { source: string; external_id: string; handle:
   }
   return out;
 }
+
+/**
+ * The same profile as a link that opens the platform's own app, for phones. Android gets an
+ * intent:// link that falls back to the website by itself if the app isn't installed; iOS gets
+ * the app's URL scheme (the caller falls back to the website if nothing opens). Null when the
+ * website link is the best we can do.
+ */
+export function appProfileUrl(source: string, href: string, os: 'ios' | 'android'): string | null {
+  let u: URL;
+  try {
+    u = new URL(href);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:') return null;
+  const path = u.pathname.replace(/\/+$/, '');
+  if (os === 'android') {
+    const pkg = ({ instagram: 'com.instagram.android', linkedin: 'com.linkedin.android', facebook: 'com.facebook.katana' } as Record<string, string>)[source];
+    if (!pkg) return null;
+    return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${pkg};S.browser_fallback_url=${encodeURIComponent(href)};end`;
+  }
+  switch (source) {
+    case 'instagram': {
+      const m = /^\/([A-Za-z0-9._]{1,30})$/.exec(path);
+      return m ? `instagram://user?username=${m[1]}` : null;
+    }
+    case 'linkedin': {
+      const m = /^\/(in|company|school)\/([^/]+)$/.exec(path);
+      return m ? `linkedin://${m[1]}/${m[2]}` : null;
+    }
+    case 'facebook':
+      // A name search opens fine on the website; real profiles open in the app.
+      return path.startsWith('/search') ? null : `fb://facewebmodal/f?href=${encodeURIComponent(href)}`;
+    default:
+      return null;
+  }
+}

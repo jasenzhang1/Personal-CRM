@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatBirthday, formatDate } from '@/lib/dates';
 import { Link } from 'react-router';
-import { Avatar, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhotoIndicator, EditableScore, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
+import { Avatar, ContactButton, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhotoIndicator, EditableScore, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, getPerson, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
@@ -45,6 +45,18 @@ type Column = {
 type CircleFilter = 'any' | Circle | 'unset' | 'org';
 
 const PAGE = 50;
+/** Contact icons the phone layout shows until you pick your own. */
+const DEFAULT_MOBILE_ICONS = ['phone', 'instagram', 'linkedin', 'facebook'];
+
+/** The links a phone row offers, in the order you chose: a phone number always means "call". */
+function contactLinks(r: PersonListRow, icons: string[]): [string, string][] {
+  const out: [string, string][] = [];
+  for (const s of icons) {
+    const href = s === 'phone' ? (r.phone ? `tel:${r.phone.replace(/[^\d+]/g, '')}` : null) : r.links[s];
+    if (href) out.push([s, href]);
+  }
+  return out;
+}
 
 type Row = PersonListRow & { circleShown: Circle | null; guessed: boolean; score: number; guess: boolean; why: string; activity: number };
 
@@ -203,6 +215,23 @@ export function People() {
       return null;
     }
   }, []);
+  // Which contact icons the phone layout shows, in SOURCE_ORDER. Saved with your data.
+  const savedIcons = useQuery(async () => {
+    const v = await getSetting(db, 'people_mobile_icons');
+    try {
+      return v ? (JSON.parse(v) as string[]) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+  const [mobileIcons, setMobileIcons] = useState<string[] | null>(null);
+  const iconKeys = mobileIcons ?? savedIcons ?? DEFAULT_MOBILE_ICONS;
+  const toggleIcon = async (s: string) => {
+    const next = iconKeys.includes(s) ? iconKeys.filter((k) => k !== s) : SOURCE_ORDER.filter((k) => k === s || iconKeys.includes(k));
+    setMobileIcons(next);
+    await setSetting(db, 'people_mobile_icons', JSON.stringify(next));
+  };
+  const [showFilters, setShowFilters] = useState(false);
   const [visibleCols, setVisibleCols] = useState<ColumnKey[] | null>(null);
   const colKeys = visibleCols ?? savedCols ?? DEFAULT_COLUMNS;
   const toggleCol = async (key: ColumnKey) => {
@@ -299,6 +328,7 @@ export function People() {
   const gridCols = ['44px', 'minmax(200px, 2.2fr)', ...shownCols.map((c) => c.width), ...(editing ? ['44px'] : [])].join(' ');
   const tableMinWidth = 44 + 200 + shownCols.reduce((n, c) => n + c.min + 12, 0) + (editing ? 56 : 0);
   const [city, setCityFilter] = useState('');
+  const filtersOn = filter !== 'all' || !!tag || !!city || circle !== 'any' || !!platform;
   const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
   const dupes = useQuery(async () => (await listDuplicates(db)).filter((p) => p.strong).length, []) ?? 0;
 
@@ -377,7 +407,7 @@ export function People() {
   };
 
   return (
-    <div className="page page-wide">
+    <div className="page page-wide people-page">
       <PageHead
         title="People"
         sub={
@@ -449,7 +479,24 @@ export function People() {
           onChange={(e) => resetPaging(setSearch)(e.target.value)}
           aria-label="Search people"
         />
-        <div className="filter-row">
+        <div className="mobile-only filter-toggle">
+          <button type="button" className={`btn ${filtersOn ? 'primary' : 'secondary'} small`} aria-expanded={showFilters} onClick={() => setShowFilters((v) => !v)}>
+            ☰ Filters &amp; sort{filtersOn ? ' (on)' : ''}
+          </button>
+          <details className="col-menu">
+            <summary className="btn secondary small">⚙︎ Icons</summary>
+            <div className="col-menu-pop card" role="group" aria-label="Contact icons to show">
+              <span className="small muted">Show these icons</span>
+              {SOURCE_ORDER.map((s) => (
+                <label key={s} className="check">
+                  <input type="checkbox" checked={iconKeys.includes(s)} onChange={() => toggleIcon(s)} />
+                  {s === 'phone' ? 'Phone (tap to call)' : (SOURCE_LABELS[s] ?? s)}
+                </label>
+              ))}
+            </div>
+          </details>
+        </div>
+        <div className={`filter-row${showFilters ? ' open' : ''}`}>
           <Chips
             label="Filter"
             options={[
@@ -486,7 +533,7 @@ export function People() {
               ))}
               <option value="__none">City not set</option>
             </select>
-            <details className="col-menu">
+            <details className="col-menu desktop-only">
               <summary className="btn secondary small">⚙︎ Columns</summary>
               <div className="col-menu-pop card" role="group" aria-label="Columns to show">
                 <span className="small muted">Show columns</span>
@@ -677,6 +724,55 @@ export function People() {
             })}
           </div>
         </div>
+      )}
+      {rows && rows.length > 0 && (
+        <ul className="card people-mobile" aria-label="People">
+          {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r) => {
+            const c = circleInfo(r.circleShown);
+            const sub = [c?.label, ...r.tags].filter(Boolean).join(' · ');
+            const who = (
+              <>
+                <Avatar name={r.name} photo={r.photo} size={44} />
+                <span className="pm-text">
+                  <span className="pm-name">
+                    {r.name}
+                    {r.nickname && <span className="nickname"> ({r.nickname})</span>}
+                  </span>
+                  {sub && <span className="pm-sub">{sub}</span>}
+                </span>
+              </>
+            );
+            return (
+              <li key={r.id} className={`pm-row${r.status === 'archived' ? ' dim' : ''}`}>
+                {selecting ? (
+                  <label className="pm-person">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.id)}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) next.add(r.id);
+                        else next.delete(r.id);
+                        setSelected(next);
+                      }}
+                      aria-label={`Select ${r.name}`}
+                    />
+                    {who}
+                  </label>
+                ) : (
+                  <Link to={`/person/${r.id}`} className="pm-person">
+                    {who}
+                  </Link>
+                )}
+                <span className="pm-icons">
+                  {contactLinks(r, iconKeys).map(([s, href]) => (
+                    <ContactButton key={s} source={s} href={href} name={r.name} />
+                  ))}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       )}
       {rows && <Pager page={pg} pageSize={PAGE} count={rows.length} onChange={setPage} />}
       {rows && rows.length === 0 && <Empty>{search || tag || city || circle !== 'any' ? 'No matches.' : 'No one here yet.'}</Empty>}
