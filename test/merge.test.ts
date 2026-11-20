@@ -285,33 +285,33 @@ test('Facebook friend-links file: real profile links replace the name search, ma
 test('splitting off a wrongly merged Instagram makes it its own person again', async () => {
   const db = fakeDb();
   await migrate(db);
-  await ingest(db, 'instagram', parseInstagram([{ string_list_data: [{ value: 'tucson.real' }] }, { string_list_data: [{ value: 'not.tucson' }] }]));
+  await ingest(db, 'instagram', parseInstagram([{ string_list_data: [{ value: 'their.account' }] }, { string_list_data: [{ value: 'wrong.account' }] }]));
   const ids = (await db.getAllAsync('SELECT person_id, external_id FROM sources')) as { person_id: number; external_id: string }[];
-  const tucson = ids.find((r) => r.external_id === 'tucson.real')!.person_id;
-  const other = ids.find((r) => r.external_id === 'not.tucson')!.person_id;
-  await db.runAsync("UPDATE people SET phone = '555-0100' WHERE id = ?", tucson);
-  await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'linkedin', 'https://www.linkedin.com/in/tucson', 'https://www.linkedin.com/in/tucson', '2026-01-01')", tucson);
-  await mergePeople(db, tucson, other);
+  const person = ids.find((r) => r.external_id === 'their.account')!.person_id;
+  const other = ids.find((r) => r.external_id === 'wrong.account')!.person_id;
+  await db.runAsync("UPDATE people SET phone = '555-0100' WHERE id = ?", person);
+  await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'linkedin', 'https://www.linkedin.com/in/someone', 'https://www.linkedin.com/in/someone', '2026-01-01')", person);
+  await mergePeople(db, person, other);
   // A chat that came along with the wrong merge.
-  await db.runAsync("INSERT INTO sources (person_id, source, external_id, first_seen) VALUES (?, 'instagram', 'chat:x_1', '2026-01-01')", tucson);
-  await db.runAsync("INSERT INTO interactions (person_id, day, source, messages) VALUES (?, '2026-02-01', 'instagram', 3)", tucson);
+  await db.runAsync("INSERT INTO sources (person_id, source, external_id, first_seen) VALUES (?, 'instagram', 'chat:x_1', '2026-01-01')", person);
+  await db.runAsync("INSERT INTO interactions (person_id, day, source, messages) VALUES (?, '2026-02-01', 'instagram', 3)", person);
 
-  // With another Instagram still on Tucson, chats stay put.
-  const wrong = (await db.getAllAsync("SELECT id FROM sources WHERE external_id = 'not.tucson'")) as { id: number }[];
-  const n1 = await splitAccounts(db, tucson, wrong.map((r) => r.id), 'Not Tucson');
+  // With another Instagram still on them, chats stay put.
+  const wrong = (await db.getAllAsync("SELECT id FROM sources WHERE external_id = 'wrong.account'")) as { id: number }[];
+  const n1 = await splitAccounts(db, person, wrong.map((r) => r.id), 'Someone Else');
   const where = async (ext: string) => ((await db.getFirstAsync('SELECT person_id FROM sources WHERE external_id = ?', ext)) as { person_id: number }).person_id;
-  assert.equal(await where('not.tucson'), n1);
-  assert.equal(await where('tucson.real'), tucson);
-  assert.equal(await where('chat:x_1'), tucson);
-  assert.equal(((await db.getFirstAsync('SELECT name, phone FROM people WHERE id = ?', n1)) as any).name, 'Not Tucson');
-  assert.equal(((await db.getFirstAsync('SELECT phone FROM people WHERE id = ?', tucson)) as any).phone, '555-0100');
+  assert.equal(await where('wrong.account'), n1);
+  assert.equal(await where('their.account'), person);
+  assert.equal(await where('chat:x_1'), person);
+  assert.equal(((await db.getFirstAsync('SELECT name, phone FROM people WHERE id = ?', n1)) as any).name, 'Someone Else');
+  assert.equal(((await db.getFirstAsync('SELECT phone FROM people WHERE id = ?', person)) as any).phone, '555-0100');
   // Not suggested as duplicates again.
-  assert.ok(!(await listDuplicates(db)).some((d) => [d.a, d.b].includes(n1) && [d.a, d.b].includes(tucson)));
+  assert.ok(!(await listDuplicates(db)).some((d) => [d.a, d.b].includes(n1) && [d.a, d.b].includes(person)));
 
   // Splitting their last Instagram takes the Instagram chats and message history with it; LinkedIn stays.
-  const real = (await db.getAllAsync("SELECT id FROM sources WHERE external_id = 'tucson.real'")) as { id: number }[];
-  const n2 = await splitAccounts(db, tucson, real.map((r) => r.id), 'tucson.real');
+  const real = (await db.getAllAsync("SELECT id FROM sources WHERE external_id = 'their.account'")) as { id: number }[];
+  const n2 = await splitAccounts(db, person, real.map((r) => r.id), 'their.account');
   assert.equal(await where('chat:x_1'), n2);
-  assert.equal(await where('https://www.linkedin.com/in/tucson'), tucson);
+  assert.equal(await where('https://www.linkedin.com/in/someone'), person);
   assert.equal(((await db.getFirstAsync("SELECT COUNT(*) AS n FROM interactions WHERE person_id = ?", n2)) as any).n, 1);
 });
