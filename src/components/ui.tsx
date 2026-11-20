@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Person } from '@/db/people';
 import { ReadOnlyError } from '@/db/browser';
@@ -564,6 +564,46 @@ export function Pager({ page, pageSize, count, onChange }: { page: number; pageS
           <span className="pager-word">Next </span>›
         </button>
       </div>
+      {total > 5 && <PageJump total={total} onGo={go} />}
     </nav>
+  );
+}
+
+/** Type a page number and press Enter (or Go) to jump straight there. */
+function PageJump({ total, onGo }: { total: number; onGo: (page: number) => void }) {
+  const id = useId();
+  const [text, setText] = useState('');
+  const n = Number(text);
+  const valid = text.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= total;
+  const jump = () => {
+    if (!valid) return;
+    onGo(n - 1);
+    setText('');
+  };
+  return (
+    <span className="pager-jump small">
+      <label htmlFor={id} className="muted">Go to page</label>
+      <input
+        id={id}
+        className="input pager-jump-input"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={total}
+        placeholder={`1–${total}`}
+        value={text}
+        aria-invalid={text !== '' && !valid}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            jump();
+          }
+        }}
+      />
+      <button type="button" className="pager-btn" disabled={!valid} onClick={jump}>
+        Go
+      </button>
+    </span>
   );
 }
