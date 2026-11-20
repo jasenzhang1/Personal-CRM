@@ -5,7 +5,13 @@ import { BrowserDb } from './db/browser';
 import { migrate } from './db/schema';
 import { StoreProvider } from './lib/store';
 import { cloud } from './lib/cloud';
+import { autoContacts } from './lib/autoContacts';
 import './styles.css';
+
+// Offline support for the home-screen app (production builds only, so it never caches the dev server).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}
 
 const root = createRoot(document.getElementById('root')!);
 root.render(<div className="boot">Loading…</div>);
@@ -13,8 +19,9 @@ root.render(<div className="boot">Loading…</div>);
 BrowserDb.open()
   .then(async (db) => {
     await migrate(db);
-    db.lock(); // changes need Edit mode from here on
+    db.live = true; // every change saves and uploads to GitHub right away, no Edit/Save step
     void cloud.start(db, () => db.onExternalChange());
+    autoContacts.start(db, () => db.onExternalChange());
     root.render(
       <StrictMode>
         <StoreProvider db={db}>

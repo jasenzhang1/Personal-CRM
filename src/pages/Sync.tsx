@@ -261,16 +261,16 @@ export function Sync() {
 
   const saveClientId = async (id: string) => {
     await setSetting(db, 'google_client_id', id.trim() || null);
-    cloud.setClientId(id);
     bump();
   };
 
-  // A setup link from another device ("#/sync?gclient=…") fills in the Client ID.
+  // A setup link from another device ("#/sync?ghrepo=…&ghtoken=…") connects this one to the same GitHub repo.
   useEffect(() => {
-    const id = params.get('gclient');
-    if (!id) return;
+    const repo = params.get('ghrepo');
+    const token = params.get('ghtoken');
+    if (!repo || !token) return;
     setParams({}, { replace: true });
-    if (/\.apps\.googleusercontent\.com$/.test(id)) void saveClientId(id);
+    cloud.connect(repo, token).catch((e) => alert(e instanceof Error ? e.message : String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -394,7 +394,7 @@ export function Sync() {
     try {
       await db.importFile(new Uint8Array(await f.arrayBuffer()));
       await migrate(db); // older backups get the newer columns
-      cloud.markChanged(); // and replace what's in Google Drive
+      cloud.markChanged(); // and commit it to GitHub
       bump();
       alert('Backup restored.');
     } catch {
@@ -559,9 +559,8 @@ export function Sync() {
         <h2 className="card-title">Your data</h2>
         <p className="muted">
           {totals ? `${totals.people} people. ` : ''}
-          Everything is stored in this browser on this device. Turn on Google Drive sync below to see the same data on your
-          phone and computer. Or download a backup and restore it on the other device. Clearing your browser's site data
-          erases what's stored here, so keep sync on or download a backup now and then.
+          Connect GitHub below and every change is committed to your private data repo within seconds, so your phone and
+          computer always show the same, latest data, and every past version is kept in the repo's history.
         </p>
         <div className="row-gap">
           <button className="btn secondary" onClick={downloadBackup}>
@@ -584,32 +583,47 @@ export function Sync() {
         </div>
       </section>
 
-      <DriveCard clientId={status?.googleClientId ?? ''} onSaveClientId={saveClientId} />
+      <GitHubCard />
     </div>
   );
 }
 
-function DriveCard({ clientId: dbClientId, onSaveClientId }: { clientId: string; onSaveClientId: (id: string) => Promise<void> }) {
+function GitHubCard() {
   const sync = useCloud();
-  const clientId = sync.clientId || dbClientId;
-  const [draft, setDraft] = useState('');
+  const [repo, setRepo] = useState(sync.repo || '');
+  const [token, setToken] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const origin = location.origin;
-  const setupLink = `${origin}${location.pathname}#/sync?gclient=${encodeURIComponent(clientId)}`;
   const busy = sync.status === 'syncing';
   const ago = sync.lastSync ? new Date(sync.lastSync).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null;
+  const commits = sync.repo ? `https://github.com/${sync.repo}/commits` : null;
+
+  const connect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConnecting(true);
+    setErr(null);
+    try {
+      await cloud.connect(repo, token);
+      setToken('');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   return (
     <section className="card pad stack drive-card">
       <header className="source-head">
         <span className="source-icon">☁</span>
-        <h2 className="card-title grow">Sync across devices (Google Drive)</h2>
+        <h2 className="card-title grow">Cloud sync (GitHub)</h2>
         {sync.enabled && <span className="tag live">On</span>}
       </header>
       <p className="muted small">
-        Keeps one copy of your data in a hidden folder in your own Google Drive that only this app can open. Changes upload a
-        few seconds after you make them. Other devices pick them up when you open or switch back to the site. Turn it on
-        here, and then on each phone or computer you use.
+        Your data is committed to a private GitHub repo a second or two after every change. Your phone and computer
+        download the latest when you open or switch back to the app, and every minute while it's open. Every commit is a
+        saved version, so you can always go back.
       </p>
 
       {sync.enabled ? (
@@ -617,8 +631,6 @@ function DriveCard({ clientId: dbClientId, onSaveClientId }: { clientId: string;
           <div className="cloud-status small">
             {busy ? (
               <span>Syncing…</span>
-            ) : sync.status === 'signin' ? (
-              <span>Google sign-in has expired (it lasts an hour). Tap Sync now.</span>
             ) : sync.status === 'error' ? (
               <span className="err-text">{sync.error}</span>
             ) : (
@@ -628,72 +640,62 @@ function DriveCard({ clientId: dbClientId, onSaveClientId }: { clientId: string;
               </span>
             )}
           </div>
+          <p className="small">
+            Repo: <b>{sync.repo}</b>
+            {commits && (
+              <>
+                {' · '}
+                <a href={commits} target="_blank" rel="noreferrer">History ↗</a>
+              </>
+            )}
+          </p>
           <div className="row-gap">
-            <button className="btn primary" disabled={busy} onClick={() => void cloud.sync(true)}>
+            <button className="btn primary" disabled={busy} onClick={() => void cloud.sync()}>
               {busy ? 'Syncing…' : 'Sync now'}
             </button>
             <button
               className="btn ghost small"
               onClick={() => {
-                void navigator.clipboard?.writeText(setupLink);
+                void navigator.clipboard?.writeText(cloud.setupLink());
                 setCopied(true);
               }}
             >
-              {copied ? 'Copied ✓' : 'Copy setup link for another device'}
+              {copied ? 'Copied ✓' : 'Copy setup link for your phone'}
             </button>
-            <button className="btn ghost small" onClick={() => confirm('Stop syncing this device? Your data stays here and in Google Drive.') && cloud.disable()}>
+            <button className="btn ghost small" onClick={() => confirm('Stop syncing this device? Your data stays here and on GitHub.') && cloud.disable()}>
               Turn off
             </button>
           </div>
           <p className="small muted">
-            To set up your phone, send yourself the setup link (it fills in the Client ID), open it on the phone, and tap{' '}
-            <b>Turn on sync</b>.
+            The setup link contains your GitHub token, so only send it to yourself (for example AirDrop or a note to
+            yourself). Open it on your phone and it connects automatically.
           </p>
-        </>
-      ) : clientId ? (
-        <>
-          <div className="row-gap">
-            <button className="btn primary" onClick={() => void cloud.enable()}>
-              Turn on sync
-            </button>
-          </div>
-          <details className="setup">
-            <summary>Before the first time: two settings in Google Cloud</summary>
-            <ol className="steps">
-              <li>
-                Turn on the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">Google Drive API ↗</a> in your Personal CRM project → <b>Enable</b>.
-              </li>
-              <li>
-                Open your <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noreferrer">OAuth client ↗</a> and make sure{' '}
-                <code className="copy" onClick={() => navigator.clipboard?.writeText(origin)} title="Click to copy">{origin}</code> is under{' '}
-                <b>Authorized JavaScript origins</b>. Add each address you use the CRM at. Click <b>Save</b>.
-              </li>
-            </ol>
-            <p className="small muted">
-              When you turn sync on, Google asks to let Personal CRM “see, create and delete its own configuration data in your
-              Google Drive”. That's the hidden app folder. It can't see your other files.
-            </p>
-          </details>
         </>
       ) : (
-        <form
-          className="stack"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            await onSaveClientId(draft);
-          }}
-        >
-          <p className="small">
-            Sync uses the same Google Client ID as “Sync with Google” above. If you set that up on another device, paste the
-            Client ID here, or open the setup link from that device. Otherwise follow the one-time setup in the Gmail & Google
-            Contacts card first.
-          </p>
+        <form className="stack" onSubmit={connect}>
+          <ol className="steps">
+            <li>
+              <a href="https://github.com/new?name=personal-crm-data&visibility=private" target="_blank" rel="noreferrer">Create a <b>private</b> repo ↗</a> named{' '}
+              <code>personal-crm-data</code>. Leave it empty.
+            </li>
+            <li>
+              <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create a fine-grained token ↗</a>: Repository access → <b>Only select repositories</b> →{' '}
+              personal-crm-data. Permissions → <b>Contents: Read and write</b>. Set the expiration as long as you like. Generate and copy it.
+            </li>
+            <li>Paste both here:</li>
+          </ol>
+          <input className="input" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="your-username/personal-crm-data" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+          <input className="input" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="github_pat_…" spellCheck={false} autoCapitalize="off" autoCorrect="off" autoComplete="off" />
+          {err && <p className="small err-text">{err}</p>}
           <div className="row-gap">
-            <input className="input grow" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="1234567890-abc123.apps.googleusercontent.com" spellCheck={false} />
-            <button className="btn primary" type="submit" disabled={!/\.apps\.googleusercontent\.com\s*$/.test(draft)}>
-              Save
+            <button className="btn primary" type="submit" disabled={connecting || !repo.includes('/') || token.trim().length < 20}>
+              {connecting ? 'Connecting…' : 'Connect and sync'}
             </button>
           </div>
+          <p className="small muted">
+            On your phone, use the setup link from your computer instead of typing the token. The token is stored only in
+            this browser and sent only to GitHub.
+          </p>
         </form>
       )}
     </section>
@@ -750,8 +752,7 @@ function GoogleCard({ clientId, busy, status, onSync, onSaveClientId }: {
               Open the <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">Google Cloud console ↗</a>, sign in with the Gmail account you want to sync, and create a project named <b>Personal CRM</b>.
             </li>
             <li>
-              Turn on the <a href="https://console.cloud.google.com/apis/library/people.googleapis.com" target="_blank" rel="noreferrer">People API ↗</a> (make sure your new project is selected at the top) → <b>Enable</b>. To sync across devices, also turn on the{' '}
-              <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">Google Drive API ↗</a>.
+              Turn on the <a href="https://console.cloud.google.com/apis/library/people.googleapis.com" target="_blank" rel="noreferrer">People API ↗</a> (make sure your new project is selected at the top) → <b>Enable</b>.
             </li>
             <li>
               Open <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noreferrer">Google Auth Platform ↗</a> → <b>Get started</b>. App name: Personal CRM. Support email: yours. Audience: <b>External</b>. Contact email: yours. Agree and <b>Create</b>.

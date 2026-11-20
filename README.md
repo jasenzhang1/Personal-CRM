@@ -20,11 +20,11 @@ npm run dev        # http://localhost:5173 — the terminal also prints a Networ
 
 `npm run build` writes a static site to `dist/`. You can host it on any static host (GitHub Pages, Netlify, Vercel, Cloudflare Pages) with no server or rewrites needed.
 
-**Live site:** https://jasenzhang1.github.io/Personal-CRM/. Every push to `main` rebuilds it (see `.github/workflows/deploy.yml`). The site holds only code. Your contacts are stored in your browser, and in your own Google Drive if you turn on sync.
+**Live site:** https://jasenzhang1.github.io/Personal-CRM/. Every push to `main` rebuilds it (see `.github/workflows/deploy.yml`). The site holds only code. Your contacts are stored in your own private GitHub data repo.
 
-## Edit mode
+## Editing
 
-The app opens view only. To change anything (edit a person, merge, delete, import, restore a backup), press **✎ Edit** at the top. Changes made in Edit mode stay in memory until you press **Save**, which saves them and turns Edit mode off. **Discard** puts everything back the way it was when you pressed Edit. Leaving the page with unsaved edits asks first. Google Drive sync waits while you're editing and uploads after Save. View settings (columns, sorting, filters) can be changed any time.
+Everything is always editable. Every change is saved straight away and committed to your private GitHub data repo a second or two later (see *Where data lives*). There's no Save button.
 
 ## Importing contacts
 
@@ -42,6 +42,18 @@ The **Import & settings** page has a button for each source that opens the right
 Drop whole `.zip` exports as-is; only the contact lists inside are read. Instagram, Facebook, LinkedIn and Discord don't let outside apps read friend lists, so for them the export file is the only way in.
 
 The **first** import from each source files everyone under **Older connections**. Later imports put only newly added people in the **Inbox**. The same person from several sources is merged by email, phone number, or an unambiguous name match. Imports only fill in blank fields and never overwrite what you wrote.
+
+### New phone contacts, automatically
+
+Add someone on your iPhone and they show up in the **Inbox** the next time you open the app, ready for how you met, notes and tags. No exporting.
+
+A website can't read your iPhone's contacts directly, so this goes through Gmail:
+
+1. iPhone: **Settings → Apps → Contacts → Contacts Accounts** → your Gmail account → turn on **Contacts**.
+2. **Settings → Apps → Contacts → Default Account** → **Gmail**. New contacts are now saved to Google too.
+3. Set up **Sync with Google** (Import & settings), then press **Turn on** in the card at the top of the Inbox.
+
+Whenever you open or return to the app, it checks your saved Google Contacts (not everyone you've emailed). It does this quietly every few minutes while a Google sign-in from the last hour is still good. After that, once a day, a bar at the top asks you to tap **Check now** (Google only opens its sign-in from a tap). That same tap also signs Google Drive sync back in. The first check files everyone already in Google under **Older connections**. The setting follows Drive sync to your other devices. Checks wait while Edit mode is on and run after you Save. Contacts saved to iCloud instead of Gmail still need the export above.
 
 ## Cleaning up names
 
@@ -135,18 +147,23 @@ Chat counts come from the Instagram, Facebook (Messenger) and Discord exports wh
 
 ## Where data lives
 
-Everything is stored in a SQLite database inside your browser (IndexedDB), on that device.
+Your data lives in a **private GitHub repo of your own** (for example `your-username/personal-crm-data`), as one file, `crm.sqlite`. The browser keeps a working copy so the app opens instantly and works offline.
 
-### Sync across devices (Google Drive)
+- Every change is committed to the repo about 1–2 seconds after you make it, and right away when you switch apps or close the tab.
+- Other devices download the latest when you open or switch back to the app, and every minute while it's open.
+- Every commit is a version, so the repo's history is a complete backup. To go back, download an older `crm.sqlite` from the repo's history and use **Restore from backup**.
+- If two devices changed things at the same moment, the one you're using wins and the other version stays in history.
 
-To use the same data on your phone and computer, turn on **Sync across devices** at the bottom of Import & settings. One copy of the database is kept in the hidden app-data folder of your own Google Drive. Only this app can open that folder, and the app can't see your other files.
+### Set up (once)
 
-- One-time setup: the same Google Client ID as *Sync with Google*. In Google Cloud, also enable the **Google Drive API**, and add every address you use (for example `https://jasenzhang1.github.io`) under **Authorized JavaScript origins**.
-- Turn it on on your computer first, so your data is uploaded. Then use **Copy setup link for another device**, open that link on your phone, and tap **Turn on sync**.
-- Changes upload a few seconds after you make them. Other devices download them when you open or switch back to the site. Google sign-in lasts an hour, so after that a **Sync now** bar asks for a tap.
-- If two devices both changed things since they last synced, you choose which copy to keep. The other copy is downloaded as a backup file, so nothing is lost.
+1. On GitHub, [create a **private** repo](https://github.com/new?name=personal-crm-data&visibility=private) named `personal-crm-data`. The app refuses to use a public repo.
+2. [Create a fine-grained token](https://github.com/settings/personal-access-tokens/new): *Only select repositories* → `personal-crm-data`, permission **Contents: Read and write**.
+3. On your computer, open the live site → **Import & settings** → **Cloud sync (GitHub)**, paste the repo name and token, and press **Connect and sync**. Your current data is uploaded.
+4. Press **Copy setup link for your phone**, send it to yourself privately (it contains the token), and open it on the iPhone. It connects and downloads everything.
 
-Without sync, nothing is uploaded. Each address is its own separate storage: `http://localhost:5173` and the Network address (`http://192.168…:5173`) don't share data, and neither do different browsers or devices. To move data, use **Download backup** and then **Restore from backup**. Clearing the browser's site data erases it, so back up now and then. If the browser ever refuses to save, a red warning appears.
+### iPhone
+
+Open the live site in Safari → Share → **Add to Home Screen**. It then opens full screen like an app, works offline, and iOS doesn't clear its storage the way it can for ordinary websites.
 
 ## Development
 
