@@ -380,8 +380,27 @@ const PHONE_OS: 'ios' | 'android' | null =
 export function ContactButton({ source, href, name, caption }: { source: string; href: string; name?: string; caption?: string }) {
   const [label, color] = SOURCE_STYLE[source] ?? [source, 'var(--muted)'];
   const glyph = SOURCE_GLYPH[source];
+  const [choosing, setChoosing] = useState(false);
   const tel = /^(tel|sms|mailto):/.test(href);
   const app = PHONE_OS ? appProfileUrl(source, href, PHONE_OS) : null;
+  // A bare phone icon asks whether to call or text; a captioned "Call" button just calls.
+  if (href.startsWith('tel:') && !caption) {
+    const number = href.slice(4);
+    return (
+      <span onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="contact-btn" style={{ color }} title={`Call or text ${name ?? ''}`.trim()} aria-label={`Call or text ${name ?? ''}`.trim()} onClick={() => setChoosing(true)}>
+          {glyph ? (
+            <svg width={22} height={22} viewBox="0 0 24 24" aria-hidden="true">
+              {glyph}
+            </svg>
+          ) : (
+            <span className="source-icon-text">{label.slice(0, 2)}</span>
+          )}
+        </button>
+        <CallOrText open={choosing} number={number} name={name} onClose={() => setChoosing(false)} />
+      </span>
+    );
+  }
   const what = href.startsWith('tel:')
     ? `Call ${name ?? ''}`.trim()
     : href.startsWith('sms:')
@@ -423,6 +442,37 @@ export function ContactButton({ source, href, name, caption }: { source: string;
       )}
       {caption && <span className="contact-caption">{caption}</span>}
     </a>
+  );
+}
+
+/** Tapping a phone number: choose to call or text it. `number` is digits (and +) only. */
+export function CallOrText({ open, number, name, onClose }: { open: boolean; number: string; name?: string; onClose: () => void }) {
+  return (
+    <Modal open={open} title={name ? `Contact ${name}` : 'Contact'} onClose={onClose}>
+      <div className="call-or-text">
+        <a className="btn primary" href={`tel:${number}`} onClick={onClose}>
+          📞 Call
+        </a>
+        <a className="btn" href={`sms:${number}`} onClick={onClose}>
+          💬 Text
+        </a>
+      </div>
+    </Modal>
+  );
+}
+
+/** A phone number shown as text; tapping it asks whether to call or text. */
+export function PhoneNumber({ phone, name }: { phone: string; name?: string }) {
+  const [open, setOpen] = useState(false);
+  const number = phone.replace(/[^\d+]/g, '');
+  if (!number) return <>{phone}</>;
+  return (
+    <span onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="link-btn" onClick={() => setOpen(true)}>
+        {phone}
+      </button>
+      <CallOrText open={open} number={number} name={name} onClose={() => setOpen(false)} />
+    </span>
   );
 }
 
