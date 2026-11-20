@@ -255,6 +255,15 @@ class CloudSync {
       await push();
       return `Uploaded ${localPeople} people to GitHub.`;
     }
+    if (localPeople === 0) {
+      // Nobody on this device (the browser cleared its storage, or a fresh install that still
+      // remembers the repo): never upload an empty copy over GitHub's, and never call it
+      // "up to date". Download GitHub's copy instead.
+      const bytes = await download(token, r);
+      const remotePeople = db.peopleIn(bytes);
+      if (remotePeople === null) throw new Error('The file on GitHub isn’t a Personal CRM database.');
+      if (remotePeople > 0) return this.replace(db, bytes, remote.sha);
+    }
     if (remote.sha === s.baseSha) {
       if (!localChanged) return 'Up to date.';
       await push(remote.sha);
