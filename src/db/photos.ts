@@ -3,7 +3,7 @@
  * with the profile to copy it from. Instagram first, LinkedIn when that's all we have.
  */
 import type { SQLiteDatabase } from './types';
-import { getSetting, setSetting } from './people';
+import { MAIN_FIRST, getSetting, setSetting } from './people';
 import { profileUrl } from '@/lib/sourceLinks';
 
 export const PHOTO_ROUND_DAYS = 30;
@@ -34,7 +34,8 @@ export async function photoQueue(db: SQLiteDatabase, opts: { refresh?: boolean; 
   );
   const sources = await db.getAllAsync<{ person_id: number; source: string; external_id: string; handle: string | null }>(
     // Same pick as the person page's main Instagram: the starred one, else the oldest with a username.
-    "SELECT person_id, source, external_id, handle FROM sources WHERE source IN ('instagram', 'linkedin') ORDER BY is_main DESC, COALESCE(handle, '') = '', first_seen",
+    `SELECT person_id, source, external_id, handle FROM sources WHERE source IN ('instagram', 'linkedin')
+     ORDER BY is_main DESC, COALESCE(handle, '') = '', ${MAIN_FIRST()}`,
   );
   const links = new Map<number, PhotoTodo['profiles']>();
   for (const s of sources) {

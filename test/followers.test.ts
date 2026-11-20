@@ -130,6 +130,14 @@ test('photo round opens the same main Instagram as the person page', async () =>
   const two = (await getSources(db, id)).find((s) => s.external_id === 'dee.two')!;
   await setMainInstagram(db, id, two.id);
   assert.equal(await igUrl(), 'https://www.instagram.com/dee.two/');
+
+  // Accounts from the same import share first_seen; both screens must still agree.
+  const eli = await createPerson(db, { name: 'Eli' });
+  for (const u of ['zed.main', 'amy.alt'])
+    await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'instagram', ?, ?, '2026-01-01')", eli, u, '@' + u);
+  const pageMain = (await getSources(db, eli)).find((s) => s.handle)!.handle!.slice(1);
+  const roundUrl = (await photoQueue(db)).find((p) => p.id === eli)!.profiles[0].url;
+  assert.equal(roundUrl, `https://www.instagram.com/${pageMain}/`);
 });
 
 test('timeline: who you added each day, from each platform', async () => {

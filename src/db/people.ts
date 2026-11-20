@@ -105,7 +105,7 @@ export async function listPeople(
             (SELECT GROUP_CONCAT(DISTINCT s.source) FROM sources s WHERE s.person_id = p.id) AS source_list,
             (SELECT GROUP_CONCAT(s.source || char(30) || s.external_id || char(30) || COALESCE(s.handle, ''), char(31)) FROM sources s WHERE s.person_id = p.id) AS src_raw,
             (SELECT GROUP_CONCAT(t.tag, '${TAG_SEP}') FROM person_tags t WHERE t.person_id = p.id) AS tag_list,
-            (SELECT s.handle FROM sources s WHERE s.person_id = p.id AND s.source = 'instagram' AND s.handle IS NOT NULL ORDER BY s.is_main DESC, s.first_seen LIMIT 1) AS ig_raw
+            (SELECT s.handle FROM sources s WHERE s.person_id = p.id AND s.source = 'instagram' AND s.handle IS NOT NULL ORDER BY ${MAIN_FIRST('s.')} LIMIT 1) AS ig_raw
      FROM people p ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY p.name COLLATE NOCASE`,
     params,
@@ -171,12 +171,18 @@ export function listPipeline(db: SQLiteDatabase) {
   );
 }
 
+/**
+ * Order of someone's accounts: the starred main one, then oldest first. `id` breaks ties so every
+ * screen picks the same one (one import gives all its accounts the same first_seen).
+ */
+export const MAIN_FIRST = (t = '') => `${t}is_main DESC, ${t}first_seen, ${t}id`;
+
 export function getPerson(db: SQLiteDatabase, id: number) {
   return db.getFirstAsync<Person>('SELECT * FROM people WHERE id = ?', id);
 }
 
 export function getSources(db: SQLiteDatabase, personId: number) {
-  return db.getAllAsync<SourceRow>('SELECT * FROM sources WHERE person_id = ? ORDER BY is_main DESC, first_seen', personId);
+  return db.getAllAsync<SourceRow>(`SELECT * FROM sources WHERE person_id = ? ORDER BY ${MAIN_FIRST()}`, personId);
 }
 
 export function getStageEvents(db: SQLiteDatabase, personId: number) {
