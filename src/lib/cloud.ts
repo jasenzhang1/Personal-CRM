@@ -1,7 +1,9 @@
 import { useSyncExternalStore } from 'react';
 import type { BrowserDb } from '@/db/browser';
 import { migrate } from '@/db/schema';
-import { checkRepo, download, findFile, GitHubAuthError, GitHubConflictError, upload, type GhRepo } from '@/sync/github';
+import { cachedToken, forgetToken, signIn, wantScopes } from '@/sync/google';
+import { DRIVE_SCOPE, DriveAuthError, download, findFile, upload } from '@/sync/drive';
+import { isoDate } from './dates';
 
 /**
  * Keeps this device's database in step with one copy committed to a private GitHub repo, so your
@@ -78,6 +80,12 @@ class CloudSync {
   private lastCheck = 0;
   private listeners = new Set<() => void>();
   private state: CloudState = this.snapshot('idle', null, null);
+  constructor() {
+    wantScopes('drive', this.saved.enabled ? [DRIVE_SCOPE] : null);
+  }
+
+  /** Called after every sync attempt finishes (the daily contacts check hooks in here). */
+  onSynced: () => void = () => {};
 
   private snapshot(status: CloudStatus, error: string | null, lastAction: string | null): CloudState {
     const s = this.saved;
@@ -99,11 +107,17 @@ class CloudSync {
 
   private persist(patch: Partial<Saved>) {
     this.saved = { ...this.saved, ...patch };
+    wantScopes('drive', this.saved.enabled ? [DRIVE_SCOPE] : null);
     try {
       localStorage.setItem(KEY, JSON.stringify(this.saved));
     } catch {
       /* storage blocked: sync still works for this visit */
     }
+  }
+
+  /** Resolves once any sync in progress is done, so other writers don't race a download. */
+  idle(): Promise<void> {
+    return this.running ?? Promise.resolve();
   }
 
   subscribe = (l: () => void) => {
@@ -156,7 +170,7 @@ class CloudSync {
   }
 
   disable() {
-    this.persist({ enabled: false, token: undefined });
+    this.persist({ enabled: false });
     this.set('off', null, null);
   }
 
@@ -185,15 +199,17 @@ class CloudSync {
       this.running = null;
       if (this.again) {
         this.again = false;
-        void this.sync();
-      }
+        void this.sync(false);
+      } else this.onSynced();
     });
     return this.running;
   }
 
-  private repo(): GhRepo | null {
-    const [owner, repo] = (this.saved.repo ?? '').split('/');
-    return owner && repo ? { owner, repo, branch: this.saved.branch || 'main' } : null;
+  private async token(interactive: boolean): Promise<string | null> {
+    const cached = cachedToken([DRIVE_SCOPE]);
+    if (cached) return cached;
+    if (!interactive || !this.saved.clientId) return null;
+    return signIn(this.saved.clientId, [DRIVE_SCOPE]);
   }
 
   private async run() {
@@ -212,9 +228,9 @@ class CloudSync {
       this.persist({ lastSync: new Date().toISOString() });
       this.set('idle', null, action);
     } catch (e) {
-      if (e instanceof GitHubConflictError) {
-        this.again = true; // pick up the other device's version, then try again
-        return this.set('syncing');
+      if (e instanceof DriveAuthError) {
+        forgetToken();
+        return this.set('signin', interactive ? e.message : null);
       }
       if (!(e instanceof GitHubAuthError)) setTimeout(() => this.saved.dirty && void this.sync(), 30_000);
       console.error('GitHub sync failed', e);

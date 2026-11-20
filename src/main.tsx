@@ -5,6 +5,7 @@ import { BrowserDb } from './db/browser';
 import { migrate } from './db/schema';
 import { StoreProvider } from './lib/store';
 import { cloud } from './lib/cloud';
+import { autoContacts } from './lib/autoContacts';
 import './styles.css';
 
 // Offline support for the home-screen app (production builds only, so it never caches the dev server).
@@ -20,6 +21,7 @@ BrowserDb.open()
     await migrate(db);
     db.live = true; // every change saves and uploads to GitHub right away, no Edit/Save step
     void cloud.start(db, () => db.onExternalChange());
+    autoContacts.start(db, () => db.onExternalChange());
     root.render(
       <StrictMode>
         <StoreProvider db={db}>
