@@ -33,7 +33,8 @@ export async function photoQueue(db: SQLiteDatabase, opts: { refresh?: boolean; 
     cutoff,
   );
   const sources = await db.getAllAsync<{ person_id: number; source: string; external_id: string; handle: string | null }>(
-    "SELECT person_id, source, external_id, handle FROM sources WHERE source IN ('instagram', 'linkedin') ORDER BY is_main DESC, first_seen",
+    // Same pick as the person page's main Instagram: the starred one, else the oldest with a username.
+    "SELECT person_id, source, external_id, handle FROM sources WHERE source IN ('instagram', 'linkedin') ORDER BY is_main DESC, COALESCE(handle, '') = '', first_seen",
   );
   const links = new Map<number, PhotoTodo['profiles']>();
   for (const s of sources) {

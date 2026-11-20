@@ -114,6 +114,24 @@ test('photo round: Instagram first, missing photos first, done people wait a mon
   assert.ok(!q.some((p) => p.id === cy));
 });
 
+test('photo round opens the same main Instagram as the person page', async () => {
+  const { photoQueue } = await import('../src/db/photos.ts');
+  const { addInstagramAccount, getSources, setMainInstagram } = await import('../src/db/people.ts');
+  const db = fakeDb();
+  await migrate(db);
+  const id = await createPerson(db, { name: 'Dee' });
+  // An old row with no handle (as some imports leave), then two accounts with usernames.
+  await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'instagram', 'dee.old', NULL, '2020-01-01')", id);
+  await addInstagramAccount(db, id, 'dee.one');
+  await addInstagramAccount(db, id, 'dee.two');
+  const igUrl = async () => (await photoQueue(db))[0].profiles[0].url;
+  // Nothing starred: the person page shows the oldest with a username.
+  assert.equal(await igUrl(), 'https://www.instagram.com/dee.one/');
+  const two = (await getSources(db, id)).find((s) => s.external_id === 'dee.two')!;
+  await setMainInstagram(db, id, two.id);
+  assert.equal(await igUrl(), 'https://www.instagram.com/dee.two/');
+});
+
 test('timeline: who you added each day, from each platform', async () => {
   const { timelineEvents } = await import('../src/db/timeline.ts');
   const db = fakeDb();
