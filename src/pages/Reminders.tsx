@@ -1,9 +1,13 @@
 import { Link } from 'react-router';
 import { Empty, PageHead, PersonRow } from '@/components/ui';
 import { listPeople, updatePerson, type Person } from '@/db/people';
-import { daysBetween, daysUntilBirthday, followUpDue, isoDate, relativeDays } from '@/lib/dates';
+import { daysBetween, daysUntilBirthday, followUpDue, formatDate, isoDate, relativeDays } from '@/lib/dates';
 import { useQuery, useStore } from '@/lib/store';
 import { lastPhotoRound, photoQueue, PHOTO_ROUND_DAYS } from '@/db/photos';
+import { followExportDates } from '@/db/followers';
+
+/** How often to download a fresh Instagram export (to catch unfollows and changed usernames). */
+const IG_EXPORT_DAYS = 30;
 
 export function Reminders() {
   const { db, bump } = useStore();
@@ -13,6 +17,12 @@ export function Reminders() {
     const last = await lastPhotoRound(db);
     const due = !last || Date.now() - new Date(last).getTime() > PHOTO_ROUND_DAYS * 86400000;
     return { due, missing: due ? (await photoQueue(db)).length : 0 };
+  });
+  // Monthly Instagram export: due a month after the newest follower/following export you imported.
+  const igExport = useQuery(async () => {
+    const { followers, following } = await followExportDates(db);
+    const last = [followers, following].filter((d): d is string => !!d).sort().pop() ?? null;
+    return { last, due: !last || Date.now() - new Date(last).getTime() > IG_EXPORT_DAYS * 86400000 };
   });
 
   const today = new Date();
@@ -45,11 +55,24 @@ export function Reminders() {
           📸 Photo round
         </Link>
       </PageHead>
-      {people && !followUps.length && !birthdays.length && (
+      {people && !followUps.length && !birthdays.length && !igExport?.due && (
         <Empty>
           Nothing due this week. On someone's profile, set how often you want to keep in touch and add their birthday, and
           they'll show up here.
         </Empty>
+      )}
+      {igExport?.due && (
+        <section className="card pad row-gap">
+          <span className="grow">
+            <strong>📥 Monthly Instagram export</strong>
+            <span className="block small muted">
+              {igExport.last ? `Your latest export is from ${formatDate(igExport.last)}.` : 'You haven’t imported your followers yet.'} In
+              Instagram, go to Accounts Center → Your information and permissions → Download your information, and ask for
+              Followers and following (JSON). When it arrives, drop it on the Import page to catch unfollows and changed usernames.
+            </span>
+          </span>
+          <Link className="btn primary" to="/sync">Import</Link>
+        </section>
       )}
       {photos?.due && photos.missing > 0 && (
         <section className="card pad row-gap">
