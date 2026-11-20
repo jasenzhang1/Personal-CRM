@@ -136,3 +136,40 @@ export async function mergeAllLikely(db: SQLiteDatabase): Promise<{ merged: numb
   }
   return { merged, skipped: pairs.length - clear.length };
 }
+
+/**
+ * Undo a wrong merge: move some of someone's accounts (e.g. an Instagram that isn't theirs) onto a
+ * new person of their own. When every account they had on that network goes, that network's chats
+ * and message history go too (chats can't be told apart per account). The two aren't suggested as
+ * duplicates again. Returns the new person's id.
+ */
+export async function splitAccounts(db: SQLiteDatabase, personId: number, sourceIds: number[], name: string): Promise<number> {
+  const all = await db.getAllAsync<{ id: number; source: string; external_id: string; connected_on: string | null }>(
+    'SELECT id, source, external_id, connected_on FROM sources WHERE person_id = ?', personId,
+  );
+  const moving = all.filter((s) => sourceIds.includes(s.id) && !s.external_id.startsWith('chat:'));
+  if (!moving.length) throw new Error('Pick an account to split off.');
+  const t = new Date().toISOString();
+  const metOn = moving.map((s) => s.connected_on).filter(Boolean).sort()[0] ?? null;
+  let newId = 0;
+  await db.withTransactionAsync(async () => {
+    const r = await db.runAsync(
+      "INSERT INTO people (name, met_on, status, created_at, updated_at) VALUES (?, ?, 'new', ?, ?)",
+      name.trim() || 'Unnamed', metOn, t, t,
+    );
+    newId = r.lastInsertRowId;
+    const ids = moving.map((s) => s.id);
+    // Networks where none of their own accounts stay behind: the chats go with the split-off one.
+    const emptied = [...new Set(moving.map((s) => s.source))].filter(
+      (src) => !all.some((s) => s.source === src && !s.external_id.startsWith('chat:') && !ids.includes(s.id)),
+    );
+    for (const src of emptied) {
+      for (const s of all) if (s.source === src && s.external_id.startsWith('chat:')) ids.push(s.id);
+      await db.runAsync('UPDATE interactions SET person_id = ? WHERE person_id = ? AND source = ?', newId, personId, src);
+    }
+    for (const id of ids) await db.runAsync('UPDATE sources SET person_id = ?, is_main = 0 WHERE id = ?', newId, id);
+    await db.runAsync('UPDATE people SET updated_at = ? WHERE id = ?', t, personId);
+  });
+  await dismissDuplicate(db, personId, newId);
+  return newId;
+}

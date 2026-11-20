@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Avatar, Chips, Closeness, ContactButton, EditableScore, Modal, SourceIcon, TagInput, instagramUrl } from '@/components/ui';
-import { mergePeople } from '@/db/merge';
+import { mergePeople, splitAccounts } from '@/db/merge';
 import { sourceLinks } from '@/lib/sourceLinks';
 import { MergeForm } from './Duplicates';
 import {
@@ -28,7 +28,7 @@ import {
   type SourceRow,
   type StageEvent,
 } from '@/db/people';
-import { CIRCLES, circleInfo, CLOSENESS_LABELS, FOLLOW_UPS, PRIORITIES, STAGES, stageInfo, type Circle, type Stage } from '@/lib/constants';
+import { CIRCLES, circleInfo, CLOSENESS_LABELS, FOLLOW_UPS, PRIORITIES, SOURCE_LABELS, STAGES, stageInfo, type Circle, type Stage } from '@/lib/constants';
 import { formatBirthday, formatDate, isoDate, isValidBirthday } from '@/lib/dates';
 import { shrinkImage } from '@/lib/image';
 import { inferCircle } from '@/lib/relationship';
@@ -122,6 +122,8 @@ export function PersonPage() {
   }, [id, person]);
   const [logMinutes, setLogMinutes] = useState('60');
   const [merging, setMerging] = useState(false);
+  const [splitting, setSplitting] = useState(false);
+  const [splitOff, setSplitOff] = useState<{ id: number; name: string } | null>(null);
   const [logDay, setLogDay] = useState(isoDate());
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const inQueue = !!queue && (person?.status === 'new' || person?.status === 'backlog');
@@ -556,6 +558,11 @@ export function PersonPage() {
               <button type="button" className="btn secondary" onClick={() => setMerging(true)}>
                 🔗 Merge with someone…
               </button>
+              {splitChoices(sources).length > 0 && (
+                <button type="button" className="btn secondary" title="Merged by mistake? Move an account that isn't theirs onto its own person." onClick={() => setSplitting(true)}>
+                  ✂ Split off an account…
+                </button>
+              )}
               <button
                 type="button"
                 className="btn secondary"
@@ -573,6 +580,26 @@ export function PersonPage() {
                 Delete person
               </button>
             </div>
+          )}
+          {splitOff && (
+            <p className="notice" role="status">
+              ✓ Split off into <Link to={`/person/${splitOff.id}`}>{splitOff.name} →</Link>
+            </p>
+          )}
+          {id !== null && person && (
+            <SplitDialog
+              open={splitting}
+              person={person}
+              sources={sources}
+              onClose={() => setSplitting(false)}
+              onSplit={async (sourceIds, name) => {
+                const newId = await splitAccounts(db, id, sourceIds, name);
+                setSplitting(false);
+                setSplitOff({ id: newId, name: name.trim() || 'Unnamed' });
+                setSources(await getSources(db, id));
+                bump();
+              }}
+            />
           )}
           {id !== null && person && (
             <MergeDialog
@@ -665,6 +692,96 @@ function ScoreRankText({ s, of }: { s: ScoreInfo; of: number }) {
 }
 
 /** Pick someone to fold into this person. Everything of theirs moves here, then they're removed. */
+/** Someone's accounts you could split off, one entry per account (rows for the same username grouped). */
+function splitChoices(sources: SourceRow[]) {
+  const out: { key: string; label: string; guess: string; ids: number[] }[] = [];
+  for (const s of sources as (SourceRow & { display_name?: string | null })[]) {
+    if (s.external_id.startsWith('chat:')) continue;
+    const handle = s.handle && !/^https?:/.test(s.handle) ? s.handle : null;
+    const shown = handle ?? (s.handle ? s.handle.replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '') : s.display_name || s.external_id);
+    const key = `${s.source}:${shown.toLowerCase()}`;
+    const seen = out.find((x) => x.key === key);
+    if (seen) seen.ids.push(s.id);
+    else out.push({ key, label: `${SOURCE_LABELS[s.source] ?? s.source} · ${shown}`, guess: s.display_name || (handle ?? '').replace(/^@/, ''), ids: [s.id] });
+  }
+  return out;
+}
+
+/** Undo a wrong merge: pick the accounts that aren't this person, and they become someone of their own. */
+function SplitDialog({ open, person, sources, onClose, onSplit }: { open: boolean; person: Person; sources: SourceRow[]; onClose: () => void; onSplit: (sourceIds: number[], name: string) => Promise<void> }) {
+  const choices = splitChoices(sources);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [name, setName] = useState('');
+  const [named, setNamed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chosen = choices.filter((c) => picked.has(c.key));
+  const shownName = named ? name : (chosen.find((c) => c.guess)?.guess ?? '');
+  const close = () => {
+    setPicked(new Set());
+    setName('');
+    setNamed(false);
+    setError(null);
+    onClose();
+  };
+  return (
+    <Modal open={open} title={`Split off from ${person.name}`} onClose={close}>
+      <div className="stack">
+        <p className="small muted">
+          Pick the accounts that aren't {person.name}. They become a new person of their own. Their phone, notes and everything else you typed stay here. If no{' '}
+          account on that network is left here, its chats go with it too.
+        </p>
+        <div className="stack">
+          {choices.map((c) => (
+            <label key={c.key} className="check">
+              <input
+                type="checkbox"
+                checked={picked.has(c.key)}
+                onChange={(e) => setPicked((p) => {
+                  const n = new Set(p);
+                  if (e.target.checked) n.add(c.key);
+                  else n.delete(c.key);
+                  return n;
+                })}
+              />
+              {c.label}
+            </label>
+          ))}
+        </div>
+        <label className="field">
+          <span className="field-label">Their name</span>
+          <input className="input" value={shownName} placeholder="Who is this?" onChange={(e) => { setName(e.target.value); setNamed(true); }} />
+        </label>
+        {error && <p className="small err-text" role="alert">{error}</p>}
+        <div className="row-gap">
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy || !chosen.length || !shownName.trim()}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await onSplit(chosen.flatMap((c) => c.ids), shownName);
+                setPicked(new Set());
+                setName('');
+                setNamed(false);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Couldn’t split that off.');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            ✂ Split off
+          </button>
+          <button type="button" className="btn ghost" onClick={close}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function MergeDialog({ open, person, onClose, onMerge }: { open: boolean; person: Person; onClose: () => void; onMerge: (otherId: number, name: string) => Promise<void> }) {
   const { db } = useStore();
   const [search, setSearch] = useState('');

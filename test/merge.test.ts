@@ -6,7 +6,7 @@ import { ingest } from '../src/sync/ingest.ts';
 import { parseInstagram } from '../src/sync/parsers.ts';
 import { importChats } from '../src/sync/activity.ts';
 import { createPerson, getTags, setTags } from '../src/db/people.ts';
-import { dismissDuplicate, listDuplicates, mergePeople } from '../src/db/merge.ts';
+import { dismissDuplicate, listDuplicates, mergePeople, splitAccounts } from '../src/db/merge.ts';
 import { listRanking, logInteraction, setPlacement } from '../src/db/ranking.ts';
 import { findDuplicates } from '../src/lib/duplicates.ts';
 
@@ -53,7 +53,7 @@ test('finding duplicates: usernames, same names, initials, but not two different
     P(5, 'jsmith', 'jsmith'),
     P(6, 'John Smith'),
     P(7, 'Kevin Lee', 'kevinlee1'),
-    P(8, 'Kevin Lee', 'kevin.lee.2'), // same name, different Instagram accounts → weak
+    P(8, 'Kevin Lee', 'kevin.lee.2'), // same name, different Instagram accounts â†’ weak
     P(9, 'Amy Tran'),
     P(10, 'amy tran'),
     P(11, 'Sam', undefined, { email: 'sam@x.com' }),
@@ -280,4 +280,38 @@ test('Facebook friend-links file: real profile links replace the name search, ma
     { name: 'facebook_friend_links.json', text: JSON.stringify({ kind: FB_LINKS_MARK, friends: [{ name: 'Amy Tran', url: 'https://facebook.com/amy.t' }] }) },
   ]).bySource.get('facebook')!;
   assert.deepEqual(both.map((c) => [c.handle, c.connectedOn]), [['https://www.facebook.com/amy.t', '2020-09-13']]);
+});
+
+test('splitting off a wrongly merged Instagram makes it its own person again', async () => {
+  const db = fakeDb();
+  await migrate(db);
+  await ingest(db, 'instagram', parseInstagram([{ string_list_data: [{ value: 'tucson.real' }] }, { string_list_data: [{ value: 'not.tucson' }] }]));
+  const ids = (await db.getAllAsync('SELECT person_id, external_id FROM sources')) as { person_id: number; external_id: string }[];
+  const tucson = ids.find((r) => r.external_id === 'tucson.real')!.person_id;
+  const other = ids.find((r) => r.external_id === 'not.tucson')!.person_id;
+  await db.runAsync("UPDATE people SET phone = '555-0100' WHERE id = ?", tucson);
+  await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'linkedin', 'https://www.linkedin.com/in/tucson', 'https://www.linkedin.com/in/tucson', '2026-01-01')", tucson);
+  await mergePeople(db, tucson, other);
+  // A chat that came along with the wrong merge.
+  await db.runAsync("INSERT INTO sources (person_id, source, external_id, first_seen) VALUES (?, 'instagram', 'chat:x_1', '2026-01-01')", tucson);
+  await db.runAsync("INSERT INTO interactions (person_id, day, source, messages) VALUES (?, '2026-02-01', 'instagram', 3)", tucson);
+
+  // With another Instagram still on Tucson, chats stay put.
+  const wrong = (await db.getAllAsync("SELECT id FROM sources WHERE external_id = 'not.tucson'")) as { id: number }[];
+  const n1 = await splitAccounts(db, tucson, wrong.map((r) => r.id), 'Not Tucson');
+  const where = async (ext: string) => ((await db.getFirstAsync('SELECT person_id FROM sources WHERE external_id = ?', ext)) as { person_id: number }).person_id;
+  assert.equal(await where('not.tucson'), n1);
+  assert.equal(await where('tucson.real'), tucson);
+  assert.equal(await where('chat:x_1'), tucson);
+  assert.equal(((await db.getFirstAsync('SELECT name, phone FROM people WHERE id = ?', n1)) as any).name, 'Not Tucson');
+  assert.equal(((await db.getFirstAsync('SELECT phone FROM people WHERE id = ?', tucson)) as any).phone, '555-0100');
+  // Not suggested as duplicates again.
+  assert.ok(!(await listDuplicates(db)).some((d) => [d.a, d.b].includes(n1) && [d.a, d.b].includes(tucson)));
+
+  // Splitting their last Instagram takes the Instagram chats and message history with it; LinkedIn stays.
+  const real = (await db.getAllAsync("SELECT id FROM sources WHERE external_id = 'tucson.real'")) as { id: number }[];
+  const n2 = await splitAccounts(db, tucson, real.map((r) => r.id), 'tucson.real');
+  assert.equal(await where('chat:x_1'), n2);
+  assert.equal(await where('https://www.linkedin.com/in/tucson'), tucson);
+  assert.equal(((await db.getFirstAsync("SELECT COUNT(*) AS n FROM interactions WHERE person_id = ?", n2)) as any).n, 1);
 });
