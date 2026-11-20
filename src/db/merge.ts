@@ -141,7 +141,7 @@ export async function mergeAllLikely(db: SQLiteDatabase): Promise<{ merged: numb
  * Undo a wrong merge: move some of someone's accounts (e.g. an Instagram that isn't theirs) onto a
  * new person of their own. When every account they had on that network goes, that network's chats
  * and message history go too (chats can't be told apart per account). The two aren't suggested as
- * duplicates again. Returns the new person's id.
+ * duplicates again, and both end up in People and Rank (never archived). Returns the new person's id.
  */
 export async function splitAccounts(db: SQLiteDatabase, personId: number, sourceIds: number[], name: string): Promise<number> {
   const all = await db.getAllAsync<{ id: number; source: string; external_id: string; connected_on: string | null }>(
@@ -168,7 +168,13 @@ export async function splitAccounts(db: SQLiteDatabase, personId: number, source
       await db.runAsync('UPDATE interactions SET person_id = ? WHERE person_id = ? AND source = ?', newId, personId, src);
     }
     for (const id of ids) await db.runAsync('UPDATE sources SET person_id = ?, is_main = 0 WHERE id = ?', newId, id);
-    await db.runAsync('UPDATE people SET updated_at = ? WHERE id = ?', t, personId);
+    // Both go back into People and Rank: an archived original is unarchived (as the Unarchive button does).
+    await db.runAsync(
+      `UPDATE people SET status = CASE WHEN status != 'archived' THEN status
+         WHEN COALESCE(how_met, '') != '' OR COALESCE(notes, '') != '' THEN 'reviewed' ELSE 'backlog' END,
+       updated_at = ? WHERE id = ?`,
+      t, personId,
+    );
   });
   await dismissDuplicate(db, personId, newId);
   return newId;

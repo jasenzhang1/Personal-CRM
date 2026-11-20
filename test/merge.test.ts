@@ -292,6 +292,7 @@ test('splitting off a wrongly merged Instagram makes it its own person again', a
   await db.runAsync("UPDATE people SET phone = '555-0100' WHERE id = ?", person);
   await db.runAsync("INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'linkedin', 'https://www.linkedin.com/in/someone', 'https://www.linkedin.com/in/someone', '2026-01-01')", person);
   await mergePeople(db, person, other);
+  await db.runAsync("UPDATE people SET status = 'archived' WHERE id = ?", person); // archived after the bad merge
   // A chat that came along with the wrong merge.
   await db.runAsync("INSERT INTO sources (person_id, source, external_id, first_seen) VALUES (?, 'instagram', 'chat:x_1', '2026-01-01')", person);
   await db.runAsync("INSERT INTO interactions (person_id, day, source, messages) VALUES (?, '2026-02-01', 'instagram', 3)", person);
@@ -307,6 +308,7 @@ test('splitting off a wrongly merged Instagram makes it its own person again', a
   assert.equal(((await db.getFirstAsync('SELECT phone FROM people WHERE id = ?', person)) as any).phone, '555-0100');
   // They show up in People (and the Inbox, as someone new).
   assert.deepEqual((await listPeople(db, { status: ['new', 'backlog', 'reviewed'] })).filter((p) => p.id === n1).map((p) => [p.name, p.status]), [['Someone Else', 'new']]);
+  assert.equal(((await db.getFirstAsync('SELECT status FROM people WHERE id = ?', person)) as any).status, 'backlog');
   // Not suggested as duplicates again.
   assert.ok(!(await listDuplicates(db)).some((d) => [d.a, d.b].includes(n1) && [d.a, d.b].includes(person)));
 
