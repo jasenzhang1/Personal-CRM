@@ -7,7 +7,7 @@ import type { SQLiteDatabase, SqlParam } from './types';
  * Every write schedules a save; other open tabs are told to reload.
  *
  * Edit mode: once `lock()` is called (after startup), changes are refused until `beginEdit()`.
- * While editing, changes stay in memory only: `saveEdit()` saves them (and lets Google Drive sync
+ * While editing, changes stay in memory only: `saveEdit()` saves them (and lets GitHub sync
  * upload them), `discardEdit()` puts back the data from when editing started. View preferences in
  * the settings table (columns, sort, filters) can always be changed.
  */
@@ -109,7 +109,7 @@ export class BrowserDb implements SQLiteDatabase {
   }
 
   private async reloadFromStorage() {
-    if (this.editing) return; // keep your edits; saving them replaces the other tab's copy
+    if (this.drafting) return; // keep your edits; saving them replaces the other tab's copy
     const bytes = await loadBytes();
     if (!bytes) return;
     this.db.close();
@@ -118,7 +118,7 @@ export class BrowserDb implements SQLiteDatabase {
   }
 
   private wrote(changed = true) {
-    if (this.editing) {
+    if (this.drafting) {
       // Kept in memory until you press Save.
       if (changed && !this.draftChanged) {
         this.draftChanged = true;
@@ -189,7 +189,16 @@ export class BrowserDb implements SQLiteDatabase {
     this.locked = true;
   }
 
+  /** Live mode: always editable, and every change is saved (and synced) straight away. No Edit/Save step. */
+  live = false;
+
+  /** Changes are allowed right now. */
   get editing() {
+    return this.live || this.snapshot !== null;
+  }
+
+  /** In the old Edit mode, holding changes in memory until Save. */
+  get drafting() {
     return this.snapshot !== null;
   }
 
@@ -207,7 +216,7 @@ export class BrowserDb implements SQLiteDatabase {
 
   /** Save everything changed in edit mode, and leave edit mode. */
   async saveEdit() {
-    if (!this.editing) return;
+    if (!this.drafting) return;
     const changed = this.draftChanged;
     this.snapshot = null;
     this.draftChanged = false;
@@ -256,7 +265,7 @@ export class BrowserDb implements SQLiteDatabase {
     this.db.close();
     this.db = next;
     this.db.exec('PRAGMA foreign_keys = ON');
-    if (this.editing && this.systemDepth === 0) return this.wrote();
+    if (this.drafting && this.systemDepth === 0) return this.wrote();
     this.dirty = true;
     await this.flush();
   }

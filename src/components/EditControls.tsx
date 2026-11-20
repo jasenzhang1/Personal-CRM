@@ -2,7 +2,8 @@ import { useStore } from '@/lib/store';
 
 /** Turn Edit mode on, or save/discard the changes made while it's on. Scrolls with the page. */
 export function EditControls() {
-  const { editing, hasEdits, beginEdit, saveEdit, discardEdit } = useStore();
+  const { db, editing, hasEdits, beginEdit, saveEdit, discardEdit } = useStore();
+  if (db.live) return null; // live mode: changes save on their own
   return (
     <section className={`card edit-bar${editing ? ' on' : ''}`} aria-label="Edit mode">
       {editing ? (

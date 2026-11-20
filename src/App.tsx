@@ -48,20 +48,10 @@ function Layout() {
             Import & settings, and check you're not in a private window.
           </p>
         )}
-        {sync.status === 'signin' && (
-          <p className="notice cloud-notice row-gap">
-            <span className="grow">
-              ☁ {sync.pending ? 'You have changes that aren’t in Google Drive yet.' : 'Sign in to get your latest data from Google Drive.'}
-            </span>
-            <button className="btn primary small" onClick={() => void cloud.sync(true)}>
-              Sync now
-            </button>
-          </p>
-        )}
         {sync.status === 'error' && sync.error && (
           <p className="notice err cloud-notice row-gap">
-            <span className="grow">☁ Google Drive sync: {sync.error}</span>
-            <button className="btn danger small" onClick={() => void cloud.sync(true)}>
+            <span className="grow">☁ GitHub sync: {sync.error}</span>
+            <button className="btn danger small" onClick={() => void cloud.sync()}>
               Try again
             </button>
           </p>
