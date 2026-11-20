@@ -440,9 +440,6 @@ export function People() {
         <Link className="btn secondary" to="/rank">
           🏆 Rank friends
         </Link>
-        <Link className="btn secondary" to="/trash">
-          🗑 Recycle bin
-        </Link>
         <button type="button" className={`btn ${selecting ? 'primary' : 'secondary'}`} onClick={() => { setSelecting((v) => !v); setSelected(new Set()); }}>
           {selecting ? 'Done selecting' : '☑ Select'}
         </button>

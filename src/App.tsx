@@ -31,6 +31,7 @@ function Layout() {
     { to: '/reminders', label: 'Reminders', icon: '⏰' },
     { to: '/followers', label: 'Followers', icon: '📸' },
     ...(proMode ? [{ to: '/pipeline', label: 'Pipeline', icon: '📊' }] : []),
+    { to: '/trash', label: 'Recycle bin', short: 'Bin', icon: '🗑' },
     { to: '/sync', label: 'Import & settings', short: 'Import', icon: '🔄' },
   ];
   return (
