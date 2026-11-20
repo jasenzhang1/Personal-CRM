@@ -82,8 +82,8 @@ function Layout() {
         )}
         {sync.status === 'error' && sync.error && (
           <p className="notice err cloud-notice row-gap">
-            <span className="grow">☁ Google Drive sync: {sync.error}</span>
-            <button className="btn danger small" onClick={() => void cloud.sync(true)}>
+            <span className="grow">☁ GitHub sync: {sync.error}</span>
+            <button className="btn danger small" onClick={() => void cloud.sync()}>
               Try again
             </button>
           </p>
