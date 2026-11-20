@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Avatar, Chips, Closeness, EditableScore, Modal, SourceIcon, TagInput, instagramUrl } from '@/components/ui';
+import { Avatar, Chips, Closeness, ContactButton, EditableScore, Modal, SourceIcon, TagInput, instagramUrl } from '@/components/ui';
 import { mergePeople } from '@/db/merge';
 import { sourceLinks } from '@/lib/sourceLinks';
 import { MergeForm } from './Duplicates';
@@ -245,6 +245,14 @@ export function PersonPage() {
   // Instagram first; LinkedIn when that's all we have.
   const linkedinUrl = sourceLinks(sources.filter((x) => x.source === 'linkedin')).linkedin ?? null;
   const fromIgChatsOnly = !igHandle && sources.some((s) => s.source === 'instagram');
+  // The phone layout's big buttons under their name: call, text, email, then their profiles.
+  const links = sourceLinks(sources);
+  const digits = form.phone.replace(/[^\d+]/g, '');
+  const quick: [string, string, string][] = [];
+  if (digits) quick.push(['phone', `tel:${digits}`, 'Call'], ['sms', `sms:${digits}`, 'Text']);
+  if (form.email.trim()) quick.push(['email', `mailto:${form.email.trim()}`, 'Email']);
+  if (igHandle) quick.push(['instagram', instagramUrl(igHandle), 'Instagram']);
+  for (const [s, caption] of [['linkedin', 'LinkedIn'], ['facebook', 'Facebook'], ['discord', 'Discord']] as const) if (links[s]) quick.push([s, links[s]!, caption]);
 
   if (missing) return <div className="page"><p className="empty">This person no longer exists. <Link to="/people">Back to People</Link></p></div>;
 
@@ -325,7 +333,14 @@ export function PersonPage() {
             aria-label="Nickname or other name"
             title="A nickname, or their other name: an English name next to a legal or Chinese name. Search and duplicate matching use it too."
           />
-          <div className="badges">
+          {quick.length > 0 && (
+            <nav className="quick-actions mobile-only" aria-label={`Contact ${form.name}`}>
+              {quick.map(([s, href, caption]) => (
+                <ContactButton key={s} source={s} href={href} name={form.name} caption={caption} />
+              ))}
+            </nav>
+          )}
+          <div className="badges person-badges">
             {Object.entries(sourceLinks(sources, form.phone)).map(([s, href]) => <SourceIcon key={s} source={s} href={href} size={22} />)}
             {sources.filter((s) => s.handle && s.source !== 'instagram').map((s) =>
               s.handle!.startsWith('http') ? (
@@ -368,7 +383,11 @@ export function PersonPage() {
           <a href={igHandle ? instagramUrl(igHandle) : linkedinUrl!} target="_blank" rel="noreferrer">
             {igHandle ? 'Instagram' : 'LinkedIn'} ↗
           </a>
-          , right-click their profile picture → <strong>Copy image</strong>, then press <kbd>Ctrl</kbd>+<kbd>V</kbd> here. On a phone, save the picture and tap 📷.
+
+          <span className="desktop-only">
+            , right-click their profile picture → <strong>Copy image</strong>, then press <kbd>Ctrl</kbd>+<kbd>V</kbd> here.
+          </span>
+          <span className="mobile-only-inline">, save their profile picture, then tap 📷 on their photo here.</span>
         </p>
       )}
 
@@ -397,7 +416,7 @@ export function PersonPage() {
               <DateInput value={form.last_contacted} onChange={(v) => set('last_contacted', v)} todayLabel="Talked today" />
             </Field>
             <Field label={`Birthday${b && b !== 'invalid' ? ` · ${formatBirthday(b)}` : ''}`}>
-              <div className="row-gap">
+              <div className="row-gap bday-row">
                 <select className="input" value={form.bMonth} onChange={(e) => set('bMonth', e.target.value)} aria-label="Birthday month">
                   <option value="">Month</option>
                   {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
@@ -445,7 +464,7 @@ export function PersonPage() {
               <span className="small muted">{describeScoreInfo(standing.s)}</span>
               <ActivityLine a={standing.activity} />
               <Field label="Log a call or hangout">
-                <div className="row-gap">
+                <div className="row-gap log-row">
                   <select className="input" value={logMinutes} onChange={(e) => setLogMinutes(e.target.value)} aria-label="How long">
                     <option value="15">15 min</option>
                     <option value="30">30 min</option>
@@ -533,7 +552,7 @@ export function PersonPage() {
           )}
 
           {id !== null && person && (
-            <div className="row-gap">
+            <div className="row-gap person-manage">
               <button type="button" className="btn secondary" onClick={() => setMerging(true)}>
                 🔗 Merge with someone…
               </button>

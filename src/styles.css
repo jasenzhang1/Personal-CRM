@@ -706,3 +706,26 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
   .people-page .page-actions::-webkit-scrollbar { display: none; }
   .people-page .page-actions .btn { padding: 7px 12px; font-size: 14px; }
 }
+
+/* ---------- Person page on a phone: contact-card header, big quick actions ---------- */
+.mobile-only-inline { display: none; }
+.contact-btn.captioned { width: auto; height: auto; min-width: 60px; padding: 8px 4px 6px; gap: 4px; border-radius: 14px; background: color-mix(in srgb, currentColor 9%, var(--surface)); }
+.contact-caption { font-size: 11.5px; font-weight: 600; color: var(--text); }
+@media (max-width: 859px) {
+  .mobile-only-inline { display: inline; }
+  .person-page .person-bar .btn { padding: 7px 12px; }
+  .person-page .person-head { flex-direction: column; align-items: stretch; gap: 10px; text-align: center; padding-top: 8px; }
+  .person-page .person-head .photo-edit .avatar { width: 96px !important; height: 96px !important; font-size: 36px !important; }
+  .person-page .name-input, .person-page .nickname-input { text-align: center; }
+  .person-page .name-input { font-size: 24px; }
+  .person-page .person-badges { display: none; }
+  .quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr)); gap: 8px; margin: 8px 0 2px; }
+  .person-page .ig-links { justify-content: center; }
+  .person-page .card.pad { padding: 14px; }
+  .person-page .photo-hint { text-align: center; }
+  .bday-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; }
+  .bday-row .input.year { width: auto; }
+  .log-row { display: grid; grid-template-columns: 1fr 1fr; }
+  .log-row > .btn { grid-column: 1 / -1; }
+  .person-manage { flex-direction: column; align-items: stretch; }
+}

@@ -268,6 +268,8 @@ const SOURCE_STYLE: Record<string, [string, string]> = {
   linkedin: ['LinkedIn', '#0a66c2'],
   instagram: ['Instagram', '#c13584'],
   facebook: ['Facebook', '#1877f2'],
+  sms: ['Text', '#34a853'],
+  email: ['Email', '#5f6be0'],
 };
 
 /** Small brand marks, drawn here so nothing loads from other sites. */
@@ -308,6 +310,13 @@ const SOURCE_GLYPH: Record<string, ReactNode> = {
       d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"
       fill="currentColor"
     />
+  ),
+  sms: <path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-4.6 3.7A.9.9 0 0 1 2 21V5a2 2 0 0 1 2-2zm3 6.3a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8zm5 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8zm5 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z" fill="currentColor" />,
+  email: (
+    <>
+      <rect x="2" y="4.5" width="20" height="15" rx="2.5" fill="currentColor" />
+      <path d="M3.5 6.5l8.5 6.3 8.5-6.3" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round" />
+    </>
   ),
 };
 
@@ -368,15 +377,23 @@ const PHONE_OS: 'ios' | 'android' | null =
  * A big, tappable contact icon for the phone layout: calls for Contacts, and opens Instagram,
  * LinkedIn and Facebook in their own app when it's installed (the website otherwise).
  */
-export function ContactButton({ source, href, name }: { source: string; href: string; name?: string }) {
+export function ContactButton({ source, href, name, caption }: { source: string; href: string; name?: string; caption?: string }) {
   const [label, color] = SOURCE_STYLE[source] ?? [source, 'var(--muted)'];
   const glyph = SOURCE_GLYPH[source];
-  const tel = href.startsWith('tel:');
+  const tel = /^(tel|sms|mailto):/.test(href);
   const app = PHONE_OS ? appProfileUrl(source, href, PHONE_OS) : null;
-  const what = tel ? `Call ${name ?? ''}`.trim() : href.includes('facebook.com/search/') ? `Search ${label} for them` : `Open their ${label}`;
+  const what = href.startsWith('tel:')
+    ? `Call ${name ?? ''}`.trim()
+    : href.startsWith('sms:')
+      ? `Text ${name ?? ''}`.trim()
+      : href.startsWith('mailto:')
+        ? `Email ${name ?? ''}`.trim()
+        : href.includes('facebook.com/search/')
+          ? `Search ${label} for them`
+          : `Open their ${label}`;
   return (
     <a
-      className="contact-btn"
+      className={`contact-btn${caption ? ' captioned' : ''}`}
       style={{ color }}
       href={app && PHONE_OS === 'android' ? app : href}
       target={tel || app ? undefined : '_blank'}
@@ -404,6 +421,7 @@ export function ContactButton({ source, href, name }: { source: string; href: st
       ) : (
         <span className="source-icon-text">{label.slice(0, 2)}</span>
       )}
+      {caption && <span className="contact-caption">{caption}</span>}
     </a>
   );
 }
