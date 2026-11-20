@@ -335,6 +335,17 @@ export function SourceIcon({ source, href, size = 18, missing }: { source: strin
   ) : (
     <span className="source-icon-text">{label.slice(0, 2)}</span>
   );
+  const [choosing, setChoosing] = useState(false);
+  if (href?.startsWith('tel:')) {
+    return (
+      <span onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="source-icon on" style={{ color, background: 'none', border: 0, padding: 0, cursor: 'pointer' }} title={`Call or text (${label})`} aria-label={`Call or text (${label})`} onClick={() => setChoosing(true)}>
+          {icon}
+        </button>
+        <CallOrText open={choosing} number={href.slice(4)} onClose={() => setChoosing(false)} />
+      </span>
+    );
+  }
   if (href) {
     const search = href.includes('facebook.com/search/');
     return (
@@ -342,10 +353,10 @@ export function SourceIcon({ source, href, size = 18, missing }: { source: strin
         className="source-icon on"
         style={{ color }}
         href={href}
-        target={href.startsWith('tel:') ? undefined : '_blank'}
+        target="_blank"
         rel="noreferrer"
-        title={source === 'phone' ? `Call (${label})` : search ? `Search ${label} for them` : `Open on ${label}`}
-        aria-label={source === 'phone' ? `Call (${label})` : search ? `Search ${label} for them` : `Open their ${label}`}
+        title={search ? `Search ${label} for them` : `Open on ${label}`}
+        aria-label={search ? `Search ${label} for them` : `Open their ${label}`}
         onClick={(e) => e.stopPropagation()}
       >
         {icon}
@@ -468,7 +479,7 @@ export function PhoneNumber({ phone, name }: { phone: string; name?: string }) {
   if (!number) return <>{phone}</>;
   return (
     <span onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="link-btn" onClick={() => setOpen(true)}>
+      <button type="button" className="phone-link" onClick={() => setOpen(true)}>
         {phone}
       </button>
       <CallOrText open={open} number={number} name={name} onClose={() => setOpen(false)} />

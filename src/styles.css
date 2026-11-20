@@ -162,6 +162,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn.block { width: 100%; }
 .link-btn { background: none; border: 0; padding: 4px 0; color: var(--muted); cursor: pointer; text-align: left; }
 .link-btn:hover { color: var(--primary); }
+.phone-link { background: none; border: 0; padding: 0; font: inherit; color: var(--primary); cursor: pointer; text-align: left; }
+.phone-link:hover { text-decoration: underline; }
+button.contact-btn { background: none; border: 0; padding: 0; cursor: pointer; }
+.call-or-text { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.call-or-text .btn { justify-content: center; padding: 14px; font-size: 16px; text-decoration: none; }
 
 .input {
   width: 100%; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 9px;

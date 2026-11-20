@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatBirthday, formatDate } from '@/lib/dates';
 import { Link } from 'react-router';
-import { Avatar, ContactButton, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhotoIndicator, EditableScore, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
+import { Avatar, ContactButton, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhoneNumber, PhotoIndicator, EditableScore, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, getPerson, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
@@ -315,7 +315,7 @@ export function People() {
         </span>
       ),
     },
-    phone: { label: 'Phone', mobileLabel: '📞', width: '150px', min: 130, sortValue: (r) => r.phone, render: (r) => (r.phone ? <a href={`tel:${r.phone.replace(/[^\d+]/g, '')}`}>{r.phone}</a> : null) },
+    phone: { label: 'Phone', mobileLabel: '📞', width: '150px', min: 130, sortValue: (r) => r.phone, render: (r) => (r.phone ? <PhoneNumber phone={r.phone} name={r.name} /> : null) },
     email: { label: 'Email', mobileLabel: '✉️', width: 'minmax(160px, 1.5fr)', min: 160, sortValue: (r) => r.email?.toLowerCase() ?? null, render: (r) => (r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : null) },
     company: { label: 'Company', mobileLabel: '🏢', width: 'minmax(120px, 1.2fr)', min: 120, sortValue: (r) => r.company?.toLowerCase() ?? null, render: (r) => r.company || null },
     city: { label: 'City', mobileLabel: '📍', width: '150px', min: 130, sortValue: (r) => r.city?.toLowerCase() ?? null, render: (r) => r.city || null },
