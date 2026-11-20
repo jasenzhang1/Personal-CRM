@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatBirthday, formatDate } from '@/lib/dates';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { Avatar, ContactButton, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhoneNumber, PhotoIndicator, EditableScore, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, getPerson, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
@@ -165,15 +165,37 @@ function TagAdder({ person, allTags, onAdd }: { person: PersonListRow; allTags: 
   );
 }
 
+/** What the list looked like, so Back from a profile lands on the same page, filters and scroll. */
+type View = { search: string; filter: Filter; tag: string; circle: CircleFilter; sortKey: SortKey; sortDir: SortDir; platform: string; city: string; page: number; scrollY: number };
+
+/** Saved per history entry (location.key): Back restores it, clicking the People tab starts fresh. */
+function readView(key: string): Partial<View> {
+  try {
+    return JSON.parse(sessionStorage.getItem(`people-view:${key}`) ?? '{}') ?? {};
+  } catch {
+    return {};
+  }
+}
+function writeView(key: string, v: Partial<View>) {
+  try {
+    sessionStorage.setItem(`people-view:${key}`, JSON.stringify({ ...readView(key), ...v }));
+  } catch {
+    // Private mode or storage full: Back just won't remember.
+  }
+}
+
 export function People() {
   const { db, bump, editing } = useStore();
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
-  const [tag, setTag] = useState('');
-  const [circle, setCircle] = useState<CircleFilter>('any');
-  const [sortKey, setSortKey] = useState<SortKey>('score');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [platform, setPlatform] = useState('');
+  const { key: viewKey } = useLocation();
+  const [saved] = useState(() => readView(viewKey));
+  const [search, setSearch] = useState(saved.search ?? '');
+  const [filter, setFilter] = useState<Filter>(saved.filter ?? 'all');
+  const [tag, setTag] = useState(saved.tag ?? '');
+  const [circle, setCircle] = useState<CircleFilter>(saved.circle ?? 'any');
+  const [sortKey, setSortKey] = useState<SortKey>(saved.sortKey ?? 'score');
+  const [sortDir, setSortDir] = useState<SortDir>(saved.sortDir ?? 'desc');
+  const [platform, setPlatform] = useState(saved.platform ?? '');
+  const [city, setCityFilter] = useState(saved.city ?? '');
   const sortBy = (k: SortKey) => {
     setPage(0);
     if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -182,7 +204,21 @@ export function People() {
       setSortDir(DEFAULT_DIR[k] ?? 'asc');
     }
   };
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(saved.page ?? 0);
+  useEffect(() => writeView(viewKey, { search, filter, tag, circle, sortKey, sortDir, platform, city, page }), [viewKey, search, filter, tag, circle, sortKey, sortDir, platform, city, page]);
+  // Layout effect so the listener is gone before the next page scrolls to the top.
+  useLayoutEffect(() => {
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => writeView(viewKey, { scrollY: window.scrollY }));
+    };
+    addEventListener('scroll', onScroll);
+    return () => {
+      cancelAnimationFrame(frame);
+      removeEventListener('scroll', onScroll);
+    };
+  }, [viewKey]);
   const [selecting, setSelecting] = useState(false);
   // Drag one row onto another to merge them (computer only).
   const [dragId, setDragId] = useState<number | null>(null);
@@ -327,7 +363,6 @@ export function People() {
   const shownCols = COLUMN_ORDER.filter((k) => colKeys.includes(k)).map((k) => ({ key: k, ...columns[k] }));
   const gridCols = ['44px', 'minmax(200px, 2.2fr)', ...shownCols.map((c) => c.width), ...(editing ? ['44px'] : [])].join(' ');
   const tableMinWidth = 44 + 200 + shownCols.reduce((n, c) => n + c.min + 12, 0) + (editing ? 56 : 0);
-  const [city, setCityFilter] = useState('');
   const filtersOn = filter !== 'all' || !!tag || !!city || circle !== 'any' || !!platform;
   const needNames = useQuery(async () => (await nameReviewList(db)).length, []) ?? 0;
   const dupes = useQuery(async () => (await listDuplicates(db)).filter((p) => p.strong).length, []) ?? 0;
@@ -366,6 +401,14 @@ export function People() {
     }
     return list;
   }, [people, circle, sortKey, sortDir, city, platform]);
+
+  // The list loads after the first render, so scroll back once the rows are on screen.
+  const restored = useRef(false);
+  useLayoutEffect(() => {
+    if (restored.current || !rows) return;
+    restored.current = true;
+    if (saved.scrollY) window.scrollTo(0, saved.scrollY);
+  }, [rows, saved]);
 
   const bulkCity = async () => {
     const c = prompt(`City for ${selected.size.toLocaleString()} ${selected.size === 1 ? 'person' : 'people'} (e.g. Los Angeles, CA). Leave blank to clear.`, city && city !== '__none' ? city : '');
