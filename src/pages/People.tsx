@@ -345,9 +345,9 @@ export function People() {
     bump();
   };
 
-  /** Edit mode only, so it can still be undone with Discard until you press Save. */
+  /** Edit mode only, so it can still be undone with Discard until you press Save. Always asks first. */
   const removePeople = async (ids: number[], label: string) => {
-    if (ids.length > 1 && !confirm(`Delete ${label} and everything attached to them? You can still undo with Discard until you press Save.`)) return;
+    if (!ids.length || !confirm(`Delete ${label} and everything attached to them? You can still undo with Discard until you press Save.`)) return;
     await deletePeople(db, ids);
     setSelected((s) => new Set([...s].filter((id) => !ids.includes(id))));
     bump();
