@@ -121,9 +121,33 @@ test('migrating a version-1 database adds the new column and tags table', async 
   // Turn it back into a version-1 database, as it was before this update.
   await db.execAsync('DROP TABLE person_tags; ALTER TABLE people DROP COLUMN circle; PRAGMA user_version = 1;');
   await migrate(db);
-  assert.equal((await db.getFirstAsync('PRAGMA user_version')).user_version, 14);
+  assert.equal((await db.getFirstAsync('PRAGMA user_version')).user_version, 15);
   const [ada] = await listPeople(db);
   assert.equal(ada.circle, null);
   await setTags(db, ada.id, ['UCLA']);
   assert.deepEqual(await getTags(db, ada.id), ['UCLA']);
+});
+
+test('choosing a main Instagram account and removing one that imports then leave off', async () => {
+  const { addInstagramAccount, getSources, removeInstagramAccount, setMainInstagram } = await import('../src/db/people.ts');
+  const db = fakeDb();
+  await migrate(db);
+  const ig = (u: string): Candidate => ({ source: 'instagram', externalId: u, name: 'Jane Doe', handle: '@' + u });
+  await ingest(db, 'instagram', [ig('jane.doe')]);
+  const [jane] = await listPeople(db, {});
+  assert.equal((await addInstagramAccount(db, jane.id, 'jane.alt')).ok, true);
+
+  let rows = (await getSources(db, jane.id)).filter((s: any) => s.source === 'instagram');
+  assert.equal(rows[0].handle, '@jane.doe');
+  await setMainInstagram(db, jane.id, rows[1].id);
+  rows = (await getSources(db, jane.id)).filter((s: any) => s.source === 'instagram');
+  assert.equal(rows[0].handle, '@jane.alt');
+  assert.equal((await listPeople(db, {}))[0].ig_handle, 'jane.alt');
+
+  const old = rows.find((r: any) => r.handle === '@jane.doe')!;
+  await removeInstagramAccount(db, jane.id, [old.id]);
+  await ingest(db, 'instagram', [ig('jane.doe')]);
+  const people = await listPeople(db, {});
+  assert.equal(people.length, 1, 'the removed account is not re-imported as a new person');
+  assert.deepEqual((await getSources(db, jane.id)).map((s: any) => s.handle), ['@jane.alt']);
 });

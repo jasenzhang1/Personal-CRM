@@ -38,6 +38,12 @@ export async function ingest(db: SQLiteDatabase, source: SourceKind, candidates:
   const baseline = (await getSetting(db, baselineKey)) === null;
   const result: IngestResult = { source, total: candidates.length, added: 0, linked: 0, baseline, relabeled: 0, maybeRenamed: 0 };
 
+  // Accounts you took off someone by hand stay off.
+  const removed = new Set(
+    (await db.getAllAsync<{ external_id: string }>('SELECT external_id FROM removed_sources WHERE source = ?', source)).map((r) => r.external_id),
+  );
+  candidates = candidates.filter((c) => !removed.has(c.externalId));
+
   const people = await db.getAllAsync<Person>('SELECT * FROM people');
   const knownRows = await db.getAllAsync<{ external_id: string; person_id: number; handle: string | null; connected_on: string | null }>(
     'SELECT external_id, person_id, handle, connected_on FROM sources WHERE source = ?', source,

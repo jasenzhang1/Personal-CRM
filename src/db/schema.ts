@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -218,6 +218,20 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
         photo TEXT,
         deleted_at TEXT NOT NULL,         -- ISO time
         data TEXT NOT NULL                -- JSON: { table: rows[] }
+      );
+    `);
+  }
+
+  if (current < 15) {
+    // The account to open first when someone has several on one network (1 = their main one).
+    await addColumn(db, 'sources', 'is_main', 'INTEGER NOT NULL DEFAULT 0');
+    await db.execAsync(`
+      -- Accounts you removed from someone, so later imports don't put them back.
+      CREATE TABLE IF NOT EXISTS removed_sources (
+        source TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        removed_at TEXT NOT NULL,
+        PRIMARY KEY (source, external_id)
       );
     `);
   }

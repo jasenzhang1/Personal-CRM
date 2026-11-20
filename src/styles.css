@@ -504,6 +504,12 @@ a.source-badge.link:hover { background: color-mix(in srgb, currentColor 10%, tra
   background: color-mix(in srgb, #e1306c 6%, var(--surface)); max-width: 100%; overflow-wrap: anywhere;
 }
 .ig-link:hover { background: color-mix(in srgb, #e1306c 14%, var(--surface)); }
+.ig-account { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.ig-account .icon-x {
+  border: none; background: none; color: var(--muted, #888); font-size: 18px; line-height: 1; cursor: pointer;
+  min-width: 28px; min-height: 28px; border-radius: 999px;
+}
+.ig-account .icon-x:hover { color: var(--danger, #d83a52); background: color-mix(in srgb, var(--danger, #d83a52) 10%, transparent); }
 .ig-add-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
 .ig-add-form .input { flex: 1 1 220px; min-width: 0; }
 .err-text { color: var(--danger, #d83a52); flex-basis: 100%; }

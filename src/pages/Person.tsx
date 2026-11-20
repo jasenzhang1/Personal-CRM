@@ -16,6 +16,8 @@ import {
   getStageEvents,
   allCities,
   addInstagramAccount,
+  removeInstagramAccount,
+  setMainInstagram,
   setArchived,
   listPeople,
   setStage,
@@ -219,8 +221,27 @@ export function PersonPage() {
   const sourceKinds = [...new Set(sources.map((s) => s.source))];
   const guess = inferCircle(sourceKinds, !!stage);
   // Chat-only Instagram links have no username, so look for one that does.
-  const igHandles = [...new Set(sources.filter((s) => s.source === 'instagram' && s.handle).map((s) => s.handle!.replace(/^@/, '')))];
-  const igHandle = igHandles[0];
+  // One entry per username (main one first), with every row that carries it.
+  const igAccounts: { handle: string; ids: number[] }[] = [];
+  for (const s of sources) {
+    if (s.source !== 'instagram' || !s.handle) continue;
+    const handle = s.handle.replace(/^@/, '');
+    const seen = igAccounts.find((a) => a.handle.toLowerCase() === handle.toLowerCase());
+    if (seen) seen.ids.push(s.id);
+    else igAccounts.push({ handle, ids: [s.id] });
+  }
+  const igHandle = igAccounts[0]?.handle;
+  const makeMainIg = async (sourceId: number) => {
+    await setMainInstagram(db, id!, sourceId);
+    setSources(await getSources(db, id!));
+    bump();
+  };
+  const removeIg = async (a: { handle: string; ids: number[] }) => {
+    if (!confirm(`Remove @${a.handle} from ${form.name}? Future Instagram imports won't add it back.`)) return;
+    await removeInstagramAccount(db, id!, a.ids);
+    setSources(await getSources(db, id!));
+    bump();
+  };
   // Instagram first; LinkedIn when that's all we have.
   const linkedinUrl = sourceLinks(sources.filter((x) => x.source === 'linkedin')).linkedin ?? null;
   const fromIgChatsOnly = !igHandle && sources.some((s) => s.source === 'instagram');
@@ -316,14 +337,23 @@ export function PersonPage() {
           </div>
           {id !== null && (
             <div className="ig-links">
-              {igHandles.map((h) => (
-                <a key={h} className="ig-link" href={instagramUrl(h)} target="_blank" rel="noreferrer">
-                  <span aria-hidden>📸</span> @{h} <span aria-hidden>↗</span>
-                </a>
+              {igAccounts.map((a, i) => (
+                <span key={a.handle} className="ig-account">
+                  <a className="ig-link" href={instagramUrl(a.handle)} target="_blank" rel="noreferrer">
+                    <span aria-hidden>📸</span> @{a.handle} <span aria-hidden>↗</span>
+                  </a>
+                  {igAccounts.length > 1 &&
+                    (i === 0 ? (
+                      <span className="small muted" title="Opened first and used for their photo">★ Main</span>
+                    ) : (
+                      <button type="button" className="link-btn small" onClick={() => makeMainIg(a.ids[0])}>Make main</button>
+                    ))}
+                  <button type="button" className="icon-x" onClick={() => removeIg(a)} aria-label={`Remove @${a.handle}`} title={`Remove @${a.handle}`}>×</button>
+                </span>
               ))}
               <AddInstagram
                 personId={id}
-                compact={igHandles.length > 0}
+                compact={igAccounts.length > 0}
                 hint={fromIgChatsOnly ? 'They came from your Instagram chats, which don’t include usernames.' : undefined}
                 onAdded={async () => setSources(await getSources(db, id))}
               />

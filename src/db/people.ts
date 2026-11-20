@@ -43,6 +43,8 @@ export interface SourceRow {
   external_id: string;
   handle: string | null;
   first_seen: string;
+  /** 1 on the account to open first when they have several on this network. */
+  is_main?: number;
 }
 
 export interface StageEvent {
@@ -103,7 +105,7 @@ export async function listPeople(
             (SELECT GROUP_CONCAT(DISTINCT s.source) FROM sources s WHERE s.person_id = p.id) AS source_list,
             (SELECT GROUP_CONCAT(s.source || char(30) || s.external_id || char(30) || COALESCE(s.handle, ''), char(31)) FROM sources s WHERE s.person_id = p.id) AS src_raw,
             (SELECT GROUP_CONCAT(t.tag, '${TAG_SEP}') FROM person_tags t WHERE t.person_id = p.id) AS tag_list,
-            (SELECT s.handle FROM sources s WHERE s.person_id = p.id AND s.source = 'instagram' AND s.handle IS NOT NULL ORDER BY s.first_seen LIMIT 1) AS ig_raw
+            (SELECT s.handle FROM sources s WHERE s.person_id = p.id AND s.source = 'instagram' AND s.handle IS NOT NULL ORDER BY s.is_main DESC, s.first_seen LIMIT 1) AS ig_raw
      FROM people p ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY p.name COLLATE NOCASE`,
     params,
@@ -174,7 +176,7 @@ export function getPerson(db: SQLiteDatabase, id: number) {
 }
 
 export function getSources(db: SQLiteDatabase, personId: number) {
-  return db.getAllAsync<SourceRow>('SELECT * FROM sources WHERE person_id = ? ORDER BY first_seen', personId);
+  return db.getAllAsync<SourceRow>('SELECT * FROM sources WHERE person_id = ? ORDER BY is_main DESC, first_seen', personId);
 }
 
 export function getStageEvents(db: SQLiteDatabase, personId: number) {
@@ -272,7 +274,32 @@ export async function addInstagramAccount(
       "INSERT INTO sources (person_id, source, external_id, handle, first_seen) VALUES (?, 'instagram', ?, ?, ?)",
       personId, username.toLowerCase(), '@' + username, new Date().toISOString(),
     );
+  // Added back by hand: let imports match it again.
+  await db.runAsync("DELETE FROM removed_sources WHERE source = 'instagram' AND external_id = ?", username.toLowerCase());
   return { ok: true, username };
+}
+
+/** Make one of someone's Instagram accounts their main one (opened first, used for their photo). */
+export async function setMainInstagram(db: SQLiteDatabase, personId: number, sourceId: number) {
+  await db.runAsync("UPDATE sources SET is_main = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE person_id = ? AND source = 'instagram'", sourceId, personId);
+}
+
+/**
+ * Take Instagram account rows off someone. They're remembered as removed so the next Instagram
+ * import doesn't add them back (adding one again by hand undoes that).
+ */
+export async function removeInstagramAccount(db: SQLiteDatabase, personId: number, sourceIds: number[]) {
+  const t = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    for (const id of sourceIds) {
+      const row = await db.getFirstAsync<{ external_id: string }>(
+        "SELECT external_id FROM sources WHERE id = ? AND person_id = ? AND source = 'instagram'", id, personId,
+      );
+      if (!row) continue;
+      await db.runAsync('DELETE FROM sources WHERE id = ?', id);
+      await db.runAsync("INSERT OR REPLACE INTO removed_sources (source, external_id, removed_at) VALUES ('instagram', ?, ?)", row.external_id, t);
+    }
+  });
 }
 
 /**
