@@ -116,7 +116,7 @@ class AutoContacts {
     // Load Google's sign-in script ahead of time: a popup opened after a slow download gets blocked.
     void loadGis().catch(() => {});
     // New people would land in your unsaved edits (and vanish on Discard). Check after you Save.
-    if (db.editing) return;
+    if (db.drafting) return;
     if (!navigator.onLine) return;
 
     let token = cachedToken(CONTACT_SCOPES);
@@ -130,7 +130,7 @@ class AutoContacts {
       // Let GitHub sync catch up first, so new people go onto the latest copy.
       await cloud.idle();
       const candidates = await fetchSavedContacts(token);
-      if (db.editing) return this.set({ status: 'idle' });
+      if (db.drafting) return this.set({ status: 'idle' });
       const before = (await db.getFirstAsync<{ n: number }>('SELECT coalesce(max(id), 0) AS n FROM people'))?.n ?? 0;
       const result = await db.system(async () => {
         const r = await ingest(db, 'google', candidates);
