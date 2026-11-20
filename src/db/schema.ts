@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from './types';
 
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 /** Runs once when the database opens. Uses PRAGMA user_version for migrations. */
 export async function migrate(db: SQLiteDatabase): Promise<void> {
@@ -207,6 +207,19 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
     // Where someone started before any answers (their activity guess, or an old placement). Scores are refitted from here.
     await addColumn(db, 'rankings', 'prior', 'REAL');
     await db.execAsync('UPDATE rankings SET prior = base WHERE prior IS NULL');
+  }
+
+  if (current < 14) {
+    await db.execAsync(`
+      -- Recycle bin: everyone you deleted in the last 30 days, with everything attached to them (see db/trash.ts).
+      CREATE TABLE IF NOT EXISTS trash (
+        person_id INTEGER PRIMARY KEY,    -- their old id; restoring puts them back under it
+        name TEXT NOT NULL,
+        photo TEXT,
+        deleted_at TEXT NOT NULL,         -- ISO time
+        data TEXT NOT NULL                -- JSON: { table: rows[] }
+      );
+    `);
   }
 
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);

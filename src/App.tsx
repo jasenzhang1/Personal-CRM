@@ -10,6 +10,7 @@ import { Rank } from './pages/Rank';
 import { Names } from './pages/Names';
 import { Duplicates } from './pages/Duplicates';
 import { Followers } from './pages/Followers';
+import { Trash } from './pages/Trash';
 import { Birthdays } from './pages/Birthdays';
 import { PhotoRound } from './pages/PhotoRound';
 import { Timeline } from './pages/Timeline';
@@ -28,6 +29,7 @@ function Layout() {
     { to: '/timeline', label: 'Timeline', icon: '🗓' },
     { to: '/rank', label: 'Rank', icon: '🏆' },
     { to: '/reminders', label: 'Reminders', icon: '⏰' },
+    { to: '/followers', label: 'Followers', icon: '📸' },
     ...(proMode ? [{ to: '/pipeline', label: 'Pipeline', icon: '📊' }] : []),
     { to: '/sync', label: 'Import & settings', short: 'Import', icon: '🔄' },
   ];
@@ -118,6 +120,7 @@ const router = createHashRouter([
       { path: '/names', element: <Names /> },
       { path: '/duplicates', element: <Duplicates /> },
       { path: '/followers', element: <Followers /> },
+      { path: '/trash', element: <Trash /> },
       { path: '/birthdays', element: <Birthdays /> },
       { path: '/photos', element: <PhotoRound /> },
       { path: '/timeline', element: <Timeline /> },

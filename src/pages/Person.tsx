@@ -201,7 +201,7 @@ export function PersonPage() {
   };
 
   const remove = async () => {
-    if (!confirm(`Delete ${form.name} and everything you wrote about them? This can't be undone.`)) return;
+    if (!confirm(`Delete ${form.name}? They'll stay in the Recycle bin for 30 days in case you change your mind.`)) return;
     await deletePerson(db, id!);
     bump();
     navigate(-1);

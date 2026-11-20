@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from './types';
 import { sourceLinks } from '@/lib/sourceLinks';
 import type { Circle, Stage } from '@/lib/constants';
+import { copyToTrash } from './trash';
 
 export type PersonStatus = 'new' | 'backlog' | 'reviewed' | 'archived';
 
@@ -205,8 +206,9 @@ export async function updatePerson(db: SQLiteDatabase, id: number, patch: Person
   );
 }
 
+/** Move one person to the recycle bin (see db/trash.ts). */
 export async function deletePerson(db: SQLiteDatabase, id: number) {
-  await db.runAsync('DELETE FROM people WHERE id = ?', id);
+  await deletePeople(db, [id]);
 }
 
 /** Move a person through the pipeline and log the change to their lifecycle timeline. */
@@ -307,9 +309,10 @@ export async function unlinkedPeople(db: SQLiteDatabase): Promise<number[]> {
   return rows.map((r) => r.id);
 }
 
-/** Delete people (and everything attached to them). */
+/** Delete people (and everything attached to them). A copy goes to the recycle bin for 30 days. */
 export async function deletePeople(db: SQLiteDatabase, ids: number[]) {
   await db.withTransactionAsync(async () => {
+    await copyToTrash(db, ids);
     for (const id of ids) {
       for (const t of ['sources', 'stage_events', 'person_tags', 'interactions', 'rankings']) await db.runAsync(`DELETE FROM ${t} WHERE person_id = ?`, id);
       for (const t of ['not_duplicates', 'comparisons']) await db.runAsync(`DELETE FROM ${t} WHERE a = ? OR b = ?`, id, id);

@@ -347,7 +347,7 @@ export function People() {
 
   /** Edit mode only, so it can still be undone with Discard until you press Save. Always asks first. */
   const removePeople = async (ids: number[], label: string) => {
-    if (!ids.length || !confirm(`Delete ${label} and everything attached to them? You can still undo with Discard until you press Save.`)) return;
+    if (!ids.length || !confirm(`Delete ${label}? They'll stay in the Recycle bin for 30 days in case you change your mind.`)) return;
     await deletePeople(db, ids);
     setSelected((s) => new Set([...s].filter((id) => !ids.includes(id))));
     bump();
@@ -410,8 +410,8 @@ export function People() {
         <Link className="btn secondary" to="/rank">
           🏆 Rank friends
         </Link>
-        <Link className="btn secondary" to="/followers">
-          📸 Followers
+        <Link className="btn secondary" to="/trash">
+          🗑 Recycle bin
         </Link>
         <button type="button" className={`btn ${selecting ? 'primary' : 'secondary'}`} onClick={() => { setSelecting((v) => !v); setSelected(new Set()); }}>
           {selecting ? 'Done selecting' : '☑ Select'}
@@ -431,7 +431,7 @@ export function People() {
             type="button"
             className="btn danger small"
             onClick={async () => {
-              if (!confirm(`Remove ${unlinked.length.toLocaleString()} people with no contact or profile link, including any notes, tags or rankings on them? This can't be undone.`)) return;
+              if (!confirm(`Remove ${unlinked.length.toLocaleString()} people with no contact or profile link, including any notes, tags or rankings on them? They'll stay in the Recycle bin for 30 days.`)) return;
               await deletePeople(db, unlinked);
               bump();
             }}
