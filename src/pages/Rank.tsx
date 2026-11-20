@@ -6,7 +6,6 @@ import { listComparisons, loadScores, recordComparison, refitWeb, setPlacement, 
 import {
   assignRanks,
   cyclePairs,
-  describeScoreInfo,
   findCycle,
   pairKey,
   pickPair,
@@ -395,7 +394,6 @@ export function Rank() {
                   <Avatar name={p.name} photo={p.photo} size={32} />
                   <span className="person-text">
                     <span className="person-name">{p.name}</span>
-                    <span className="person-sub">{s.placed ? describeScoreInfo(s) : '≈ guessed from activity'}</span>
                   </span>
                 </button>
                 <div className="person-right">
