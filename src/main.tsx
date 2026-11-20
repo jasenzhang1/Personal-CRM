@@ -19,7 +19,7 @@ root.render(<div className="boot">Loading…</div>);
 BrowserDb.open()
   .then(async (db) => {
     await migrate(db);
-    db.live = true; // every change saves and uploads to GitHub right away, no Edit/Save step
+    db.lock(); // changes need Edit mode from here on; Save keeps them and uploads them to GitHub
     void cloud.start(db, () => db.onExternalChange());
     autoContacts.start(db, () => db.onExternalChange());
     root.render(
