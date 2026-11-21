@@ -220,10 +220,13 @@ export function People() {
     };
   }, [viewKey]);
   const [selecting, setSelecting] = useState(false);
-  // Drag one row onto another to merge them (computer only).
+  // Drag one row onto another to merge them (on a phone: hold, then drag).
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropId, setDropId] = useState<number | null>(null);
   const [mergePair, setMergePair] = useState<{ keep: Row; drop: Row } | null>(null);
+  // On a phone: press and hold a person, then drag onto another to merge them.
+  const mobileList = useRef<HTMLUListElement>(null);
+  const [touchGhost, setTouchGhost] = useState<{ x: number; y: number; name: string } | null>(null);
   const [merging, setMerging] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ el: HTMLElement; row: Row } | null>(null);
@@ -401,6 +404,121 @@ export function People() {
     }
     return list;
   }, [people, circle, sortKey, sortDir, city, platform]);
+
+  // Phone drag-to-merge. Browsers don't do HTML drag-and-drop with a finger, so this is done by hand:
+  // hold a row still for a moment (moving first is a normal scroll), then drag it onto someone else.
+  // Native listeners because the page must not scroll while dragging (React's touch listeners are passive).
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  useEffect(() => {
+    const ul = mobileList.current;
+    if (!ul || selecting) return;
+    const HOLD_MS = 450;
+    const SLOP = 10;
+    let timer = 0;
+    let frame = 0;
+    let start: { x: number; y: number } | null = null;
+    let from: Row | null = null;
+    let over: number | null = null;
+    let lastY = 0;
+    let justDragged = false;
+    const idAt = (x: number, y: number) => {
+      const li = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('.pm-row[data-person-id]');
+      return li && ul.contains(li) ? Number(li.dataset.personId) : null;
+    };
+    const autoScroll = () => {
+      if (!from) return;
+      const edge = 70;
+      const h = window.innerHeight;
+      const dy = lastY < edge ? -(edge - lastY) / 4 : lastY > h - edge ? (lastY - (h - edge)) / 4 : 0;
+      if (dy) window.scrollBy(0, dy);
+      frame = requestAnimationFrame(autoScroll);
+    };
+    const reset = () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(frame);
+      start = null;
+      from = null;
+      over = null;
+      setDragId(null);
+      setDropId(null);
+      setTouchGhost(null);
+    };
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return reset();
+      const t = e.touches[0];
+      // The contact buttons on the right are for calling/texting, not dragging.
+      if ((e.target as HTMLElement).closest('.pm-icons')) return;
+      const id = idAt(t.clientX, t.clientY);
+      const row = rowsRef.current?.find((r) => r.id === id);
+      if (!row) return;
+      start = { x: t.clientX, y: t.clientY };
+      lastY = t.clientY;
+      timer = window.setTimeout(() => {
+        from = row;
+        navigator.vibrate?.(30);
+        setDragId(row.id);
+        setTouchGhost({ x: start!.x, y: start!.y, name: row.name });
+        frame = requestAnimationFrame(autoScroll);
+      }, HOLD_MS);
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!start) return;
+      const t = e.touches[0];
+      if (!from) {
+        // Moved before the hold finished: it's a scroll, not a drag.
+        if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > SLOP) {
+          clearTimeout(timer);
+          start = null;
+        }
+        return;
+      }
+      e.preventDefault();
+      lastY = t.clientY;
+      setTouchGhost({ x: t.clientX, y: t.clientY, name: from.name });
+      const id = idAt(t.clientX, t.clientY);
+      over = id !== null && id !== from.id ? id : null;
+      setDropId(over);
+    };
+    const onEnd = (e: TouchEvent) => {
+      const dragged = from;
+      const target = over;
+      if (dragged) {
+        e.preventDefault(); // no tap on the row's link after a drag
+        justDragged = true;
+        setTimeout(() => (justDragged = false), 400);
+      }
+      reset();
+      if (dragged && target !== null) {
+        const keep = rowsRef.current?.find((r) => r.id === target);
+        if (keep) setMergePair({ keep, drop: dragged });
+      }
+    };
+    const onClick = (e: MouseEvent) => {
+      if (justDragged) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const onMenu = (e: Event) => {
+      if (start || from) e.preventDefault(); // Android's long-press menu
+    };
+    ul.addEventListener('touchstart', onStart, { passive: true });
+    ul.addEventListener('touchmove', onMove, { passive: false });
+    ul.addEventListener('touchend', onEnd, { passive: false });
+    ul.addEventListener('touchcancel', reset);
+    ul.addEventListener('click', onClick, true);
+    ul.addEventListener('contextmenu', onMenu);
+    return () => {
+      reset();
+      ul.removeEventListener('touchstart', onStart);
+      ul.removeEventListener('touchmove', onMove);
+      ul.removeEventListener('touchend', onEnd);
+      ul.removeEventListener('touchcancel', reset);
+      ul.removeEventListener('click', onClick, true);
+      ul.removeEventListener('contextmenu', onMenu);
+    };
+  }, [selecting, !!rows?.length]);
 
   // The list loads after the first render, so scroll back once the rows are on screen.
   const restored = useRef(false);
@@ -766,7 +884,7 @@ export function People() {
         </div>
       )}
       {rows && rows.length > 0 && (
-        <ul className="card people-mobile" aria-label="People">
+        <ul className="card people-mobile" aria-label="People" ref={mobileList}>
           {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r) => {
             const c = circleInfo(r.circleShown);
             const sub = [c?.label, ...r.tags].filter(Boolean).join(' · ');
@@ -783,7 +901,11 @@ export function People() {
               </>
             );
             return (
-              <li key={r.id} className={`pm-row${r.status === 'archived' ? ' dim' : ''}`}>
+              <li
+                key={r.id}
+                data-person-id={r.id}
+                className={`pm-row${r.status === 'archived' ? ' dim' : ''}${dragId === r.id ? ' dragging' : ''}${dropId === r.id ? ' drop-target' : ''}`}
+              >
                 {selecting ? (
                   <label className="pm-person">
                     <input
@@ -813,6 +935,11 @@ export function People() {
             );
           })}
         </ul>
+      )}
+      {touchGhost && (
+        <div className="touch-ghost" style={{ left: touchGhost.x, top: touchGhost.y }} aria-hidden>
+          {touchGhost.name}
+        </div>
       )}
       {rows && <Pager page={pg} pageSize={PAGE} count={rows.length} onChange={setPage} />}
       {rows && rows.length === 0 && <Empty>{search || tag || city || circle !== 'any' ? 'No matches.' : 'No one here yet.'}</Empty>}
