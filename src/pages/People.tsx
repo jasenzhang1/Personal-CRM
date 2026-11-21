@@ -31,7 +31,7 @@ const DEFAULT_DIR: Partial<Record<SortKey, SortDir>> = { score: 'desc', created:
 /** Optional table columns, in display order. Person is always first. */
 const COLUMN_ORDER = ['type', 'tags', 'score', 'sources', 'phone', 'email', 'company', 'city', 'how_met', 'birthday', 'last_contacted', 'created'] as const;
 type ColumnKey = (typeof COLUMN_ORDER)[number];
-const DEFAULT_COLUMNS: ColumnKey[] = ['type', 'tags', 'score', 'sources'];
+const DEFAULT_COLUMNS: ColumnKey[] = ['type', 'tags', 'score', 'sources', 'city'];
 type Column = {
   label: string;
   title?: string;
@@ -354,7 +354,7 @@ export function People() {
     phone: { label: 'Phone', mobileLabel: '📞', width: '150px', min: 130, sortValue: (r) => r.phone, render: (r) => (r.phone ? <PhoneNumber phone={r.phone} name={r.name} /> : null) },
     email: { label: 'Email', mobileLabel: '✉️', width: 'minmax(160px, 1.5fr)', min: 160, sortValue: (r) => r.email?.toLowerCase() ?? null, render: (r) => (r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : null) },
     company: { label: 'Company', mobileLabel: '🏢', width: 'minmax(120px, 1.2fr)', min: 120, sortValue: (r) => r.company?.toLowerCase() ?? null, render: (r) => r.company || null },
-    city: { label: 'City', mobileLabel: '📍', width: '150px', min: 130, sortValue: (r) => r.city?.toLowerCase() ?? null, render: (r) => r.city || null },
+    city: { label: 'Location', mobileLabel: '📍', width: '150px', min: 130, sortValue: (r) => r.city?.toLowerCase() ?? null, render: (r) => r.city || null },
     how_met: { label: 'How you met', mobileLabel: '🤝', width: 'minmax(140px, 1.5fr)', min: 140, sortValue: (r) => r.how_met?.toLowerCase() ?? null, render: (r) => r.how_met || null },
     birthday: { label: 'Birthday', mobileLabel: '🎂', width: '110px', min: 100, sortValue: (r) => (r.birthday ? r.birthday.slice(-5) : null), render: (r) => (r.birthday ? formatBirthday(r.birthday) : null) },
     last_contacted: { label: 'Last talked', mobileLabel: '💬', width: '120px', min: 110, sortValue: (r) => r.last_contacted, render: (r) => (r.last_contacted ? formatDate(r.last_contacted) : null) },
