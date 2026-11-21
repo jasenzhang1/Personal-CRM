@@ -703,10 +703,12 @@ kbd { font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(
 .contact-btn { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; text-decoration: none !important; -webkit-tap-highlight-color: transparent; }
 .contact-btn:active { background: color-mix(in srgb, currentColor 16%, transparent); }
 .mobile-only { display: none; }
+.mobile-hint { display: none; margin: 0 0 8px; }
 @media (max-width: 859px) {
   .people-page .people-table { display: none; }
   .people-mobile { display: block; }
   .mobile-only { display: flex; }
+  .mobile-hint { display: block; }
   .desktop-only { display: none !important; }
   .filter-toggle { gap: 8px; align-items: center; }
   .filter-toggle > .btn { flex: 1; }

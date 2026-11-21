@@ -883,6 +883,7 @@ export function People() {
           </div>
         </div>
       )}
+      {rows && rows.length > 1 && !selecting && <p className="small muted mobile-hint">Tip: hold a person, then drag them onto another to merge.</p>}
       {rows && rows.length > 0 && (
         <ul className="card people-mobile" aria-label="People" ref={mobileList}>
           {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r) => {
