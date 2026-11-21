@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
-    "test": "node --import ./test/setup.mjs --no-warnings --test \"test/**/*.test.ts\""
+    "test": "node --import ./test/setup.mjs --no-warnings --test \"test/**/*.test.ts\"",
+    "linkedin": "node --import ./test/setup.mjs --no-warnings agents/linkedin/run.ts"
   },
   "dependencies": {
     "fflate": "^0.8.3",
@@ -23,6 +24,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^6.3.0",
+    "playwright-core": "^1.65.1",
     "typescript": "~6.0.3",
     "vite": "^8.3.8"
   }

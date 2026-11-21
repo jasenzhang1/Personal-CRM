@@ -43,6 +43,10 @@ Drop whole `.zip` exports as-is; only the contact lists inside are read. Instagr
 
 The **first** import from each source files everyone under **Older connections**. Later imports put only newly added people in the **Inbox**. The same person from several sources is merged by email, phone number, or an unambiguous name match. Imports only fill in blank fields and never overwrite what you wrote.
 
+### LinkedIn, automatically (daily agent)
+
+A scheduled job on your Windows computer downloads your LinkedIn data archive every day and imports it, so new connections show up in the **Inbox** on their own. It drives LinkedIn's export page in a real browser, which is against LinkedIn's terms and can get an account restricted. Setup and details are in [agents/README.md](agents/README.md).
+
 ### New phone contacts, automatically
 
 Add someone on your iPhone and they show up in the **Inbox** the next time you open the app, ready for how you met, notes and tags. No exporting.
