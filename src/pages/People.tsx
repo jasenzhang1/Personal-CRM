@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatBirthday, formatDate } from '@/lib/dates';
 import { Link, useLocation } from 'react-router';
-import { Avatar, ContactButton, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhoneNumber, PhotoIndicator, EditableScore, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
+import { Avatar, ContactButton, Chips, Empty, LabelMenu, Modal, PageHead, Pager, PhoneNumber, PhotoIndicator, EditableScore, ScoreBadge, SOURCE_ORDER, SourceIcon, TagChip } from '@/components/ui';
 import { allTags, getPerson, listPeople, updatePerson, type PersonListRow, type PersonStatus } from '@/db/people';
 import { CIRCLES, circleInfo, SOURCE_LABELS, type Circle } from '@/lib/constants';
 import { describeScoreInfo } from '@/lib/ranking';
@@ -886,11 +886,12 @@ export function People() {
       {rows && rows.length > 1 && !selecting && <p className="small muted mobile-hint">Tip: hold a person, then drag them onto another to merge.</p>}
       {rows && rows.length > 0 && (
         <ul className="card people-mobile" aria-label="People" ref={mobileList}>
-          {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r) => {
+          {rows.slice(pg * PAGE, (pg + 1) * PAGE).map((r, j) => {
             const c = circleInfo(r.circleShown);
             const sub = [c?.label, ...r.tags].filter(Boolean).join(' · ');
             const who = (
               <>
+                <span className="pm-num">{pg * PAGE + j + 1}</span>
                 <Avatar name={r.name} photo={r.photo} size={44} />
                 <span className="pm-text">
                   <span className="pm-name">
@@ -898,6 +899,9 @@ export function People() {
                     {r.nickname && <span className="nickname"> ({r.nickname})</span>}
                   </span>
                   {sub && <span className="pm-sub">{sub}</span>}
+                </span>
+                <span className="pm-score">
+                  <ScoreBadge score={r.score} guess={r.guess} title={r.why} />
                 </span>
               </>
             );
